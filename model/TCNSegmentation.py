@@ -7,23 +7,24 @@ from torch.functional import F
 
 
 class EncoderBlock(nn.Module):
-    def __init__(self):
+    def __init__(self, in_ch, out_ch, ksize=3, pool=True):
         super().__init__()
         layers = [
-            SeparableConvLayer(3, 8, kernel_size=9, padding=4),
-            nn.MaxPool1d(2),
-            SeparableConvLayer(8, 16, kernel_size=7, padding=3),
-            nn.MaxPool1d(2),
-            SeparableConvLayer(16, 32, kernel_size=5, padding=2),
-            nn.MaxPool1d(2),
-            SeparableConvLayer(32, 64, kernel_size=3, padding=1),
-            nn.MaxPool1d(2),
+            nn.Conv1d(in_ch, out_ch, ksize, padding=ksize//2),
+            nn.BatchNorm1d(out_ch),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(out_ch, out_ch, ksize, padding=ksize//2),
+            nn.BatchNorm1d(out_ch),
+            nn.ReLU(inplace=True)
         ]
-        self.seq = nn.Sequential(*layers)
-
+        self.conv = nn.Sequential(*layers)
+        self.pool = nn.MaxPool1d(2) if pool else nn.Identity()
+    
     def forward(self, x):
-        return self.seq(x)
-
+        x = self.conv(x)
+        skip = x
+        x = self.pool(x)
+        return x
 
 class DecoderBlock(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size=3):
@@ -54,7 +55,7 @@ class DecoderBlock(nn.Module):
 
 @ModelLoader.register("TCNSegmentation")
 class Models(nn.Module):
-    def __init__(self, levels):
+    def __init__(self, levels=4):
         super().__init__()
 
         self.enc1 = EncoderBlock(3, 8, 9)
@@ -84,10 +85,10 @@ class Models(nn.Module):
         pad_amount = pad_to - orig_len
 
         x = F.pad(x, (0, pad_amount))
-        x, skip1 = self.enc1(x)
-        x, skip2 = self.enc2(x)
-        x, skip3 = self.enc3(x)
-        x, skip4 = self.enc4(x)
+        x = self.enc1(x)
+        x = self.enc2(x)
+        x = self.enc3(x)
+        x = self.enc4(x)
         x = self.network(x)
 
         x = self.dec4(x)

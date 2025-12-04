@@ -1,4 +1,5 @@
 from torch import nn
+from torch.functional import F
 
 class CausalConv1DLayer(nn.Module):
     def __init__(self, in_ch, out_ch, ksize, dilation=1):
