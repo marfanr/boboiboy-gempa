@@ -44,7 +44,7 @@ class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
         hdf = self.hdf5.get("data/" + str(df.trace_name))
         attrs = hdf.attrs
         xx = WavePreproccesingFromHDF(hdf).get()
-        x = torch.from_numpy(xx[x_start:x_end]).permute(0, 1)
+        x = torch.from_numpy(xx[x_start:x_end])
 
         label = [0.0 for i in range(0, self.data_length)]
         p_arrived_sample = float(attrs['p_arrival_sample']) if attrs['p_arrival_sample'] not in ['', None] else 0.0
@@ -67,7 +67,7 @@ class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
 
         label = torch.tensor([label], dtype=torch.float32)
 
-        return x, label
+        return x.permute(1, 0), label
 
 
 class EarthQuakeWaveSlidingWindowNumpyDataset(Dataset):
