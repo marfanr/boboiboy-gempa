@@ -135,7 +135,7 @@ class DataLoader:
         self.source = None
         if hdf5 is not None:
             self.source = "hdf5"
-            if csv is not None:
+            if csv is None:
                 raise ValueError("csv must be used with hdf5")
             self.df = pd.read_csv(csv)
             self.hdf5 = h5py.File(hdf5, "r")
