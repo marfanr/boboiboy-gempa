@@ -8,7 +8,6 @@ from ignite.metrics import Accuracy, Loss
 from ignite.engine import Events
 from ignite.handlers import EarlyStopping
 import time
-import torch_directml
 import torch
 from ignite.handlers import ModelCheckpoint
 
