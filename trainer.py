@@ -49,6 +49,11 @@ class Trainer:
         self.train_dl = train
         self.test_dl = test
         self.model = model.to(device=device)
+        if torch.cuda.device_count() > 1:
+            print("Using", torch.cuda.device_count(), "GPUs")
+            model = nn.DataParallel(model)
+
+        model = model.to(device)
 
         self.optimizer = optimizer
         if self.optimizer is None:
