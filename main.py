@@ -63,8 +63,24 @@ def main():
         1000, args.stride, args.test_count, args.test_pos, True
     )
 
-    train_dataLoader = DataLoader(train_ds, args.batch, True)
-    test_dataLoader = DataLoader(test_ds, args.batch, False)
+    train_dataLoader = DataLoader(
+        train_ds,
+        args.batch,
+        True,
+        num_workers=8,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
+    )
+    test_dataLoader = DataLoader(
+        test_ds,
+        args.batch,
+        False,
+        num_workers=8,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
+    )
 
     if args.mode == "train":
         trainer = Trainer(train_dataLoader, test_dataLoader, model)

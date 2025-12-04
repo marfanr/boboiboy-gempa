@@ -7,20 +7,27 @@ import pandas as pd
 
 
 class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
-    def __init__(self, length, df, hdf5, stride, count, offset_pos, L=6000):
+    def __init__(self, length, df, hdf5_path, stride, count, offset_pos, L=6000):
         super().__init__()
         self.data_length = length
         self.df = df
-        self.hdf5 = hdf5
+        self.hdf5_path = hdf5_path
+        self.hdf5 = None
         self.L = L
         self.stride = stride
         self.count = count
         self.offset_pos = offset_pos
+        
+    def _ensure_hdf5_open(self):
+        if self.hdf5 is None:
+            # setiap worker buka file sendiri
+            self.hdf5 = h5py.File(self.hdf5_path, "r")
 
     def __len__(self):
         return int(self.count * (((self.L - self.data_length) // self.stride) + 1))
     
     def __getitem__(self, index):
+        self._ensure_hdf5_open()
         if isinstance(index, slice):
             start_i = index.start or 0
             stop_i = index.stop or len(self)
