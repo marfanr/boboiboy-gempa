@@ -106,7 +106,7 @@ class Trainer:
 
         EPS = 1e-8
 
-        print(f"Model saved: {self.out}.pth at {epoch}.pth")
+        print(f"Model saved at {self.output} {epoch}.pth")
         print("1 epoch complete")
         self.evaluator.run(self.test_dl)
         self.best_checkpointer(
