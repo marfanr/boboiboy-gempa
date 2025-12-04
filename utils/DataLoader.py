@@ -47,8 +47,8 @@ class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
         x = torch.from_numpy(xx[x_start:x_end]).permute(0, 1)
 
         label = [0.0 for i in range(0, self.data_length)]
-        p_arrived_sample = float(attrs["p_arrival_sample"])
-        s_arrived_sample = float(attrs["s_arrival_sample"])
+        p_arrived_sample = float(attrs['p_arrival_sample']) or 0
+        s_arrived_sample = float(attrs['s_arrival_sample']) or 0
 
         event_start = p_arrived_sample
         event_end = s_arrived_sample
