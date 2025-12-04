@@ -111,8 +111,9 @@ class EarthQuakeWaveSlidingWindowNumpyDataset(Dataset):
         y__ = self.y[x_index]
 
         label = [0.0 for i in range(0, self.data_length)]
-        p_arrived_sample = float(y__[0])
-        s_arrived_sample = float(y__[1])
+        p_arrived_sample = float(attrs['p_arrival_sample']) if attrs['p_arrival_sample'] not in ['', None] else 0.0
+        s_arrived_sample = float(attrs['s_arrival_sample']) if attrs['s_arrival_sample'] not in ['', None] else 0.0
+        
         # print(y__)
         event_start = p_arrived_sample
         event_end = s_arrived_sample
