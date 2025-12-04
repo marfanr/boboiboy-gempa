@@ -148,7 +148,7 @@ class DataLoader:
             if csv is None:
                 raise ValueError("csv must be used with hdf5")
             self.df = pd.read_csv(csv)
-            self.hdf5 = h5py.File(hdf5, "r")
+            self.hdf5 = hdf5
 
         elif x_test != None and x_train != None and y_test != None and y_train != None:
             self.source = "np"
