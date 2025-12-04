@@ -66,7 +66,7 @@ def main():
     train_dataLoader = DataLoader(
         train_ds,
         args.batch,
-        True,
+        False,
         num_workers=8,
         pin_memory=True,
         persistent_workers=True,
