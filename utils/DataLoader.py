@@ -17,6 +17,9 @@ class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
         self.count = count
         self.offset_pos = offset_pos
 
+    def __len__(self):
+        return int(self.count * (((self.L - self.data_length) // self.stride) + 1))
+    
     def __getitem__(self, index):
         if isinstance(index, slice):
             start_i = index.start or 0
