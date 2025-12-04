@@ -65,6 +65,7 @@ class Trainer:
         self.criterion = criterion
         if self.criterion is None:
             self.criterion = nn.BCEWithLogitsLoss()
+            
 
     def train_step(self, engine, batch):
         self.model.train()
@@ -120,6 +121,10 @@ class Trainer:
         print(
             f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}, Val Acc: {metrics['accuracy']:.4f}"
         )
+        
+    def _prepare_batch(self, batch, device):
+        x, y = batch
+        return x.to(device, non_blocking=True), y.to(device, non_blocking=True)
 
     def train(self, max_epoch, weight, output):
         self.trainer = Engine(self.train_step)
@@ -132,6 +137,7 @@ class Trainer:
                 ),
             },
             device=device,
+            prepare_batch=self._prepare_batch
         )
         self.output = output
         if self.output is None:
