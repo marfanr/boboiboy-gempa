@@ -49,7 +49,7 @@ class Trainer:
     ):
         self.train_dl = train
         self.test_dl = test
-        self.model = model
+        self.model = model.to(device=device)
 
         self.optimizer = optimizer
         if self.optimizer is None:
@@ -111,6 +111,10 @@ class Trainer:
         self.evaluator.run(self.test_dl)
         self.best_checkpointer(
             self.evaluator, {"model": self.model, "optimizer": self.optimizer}
+        )
+        metrics = self.evaluator.state.metrics
+        print(
+            f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}, Val Acc: {metrics['accuracy']:.4f}"
         )
 
     def train(self, max_epoch, weight, output):

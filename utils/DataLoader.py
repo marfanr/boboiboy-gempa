@@ -1,13 +1,70 @@
-from .preproccessing import WavePreproccesing
+from .preproccessing import WavePreproccesing, WavePreproccesingFromHDF
 from torch.utils.data import Dataset
 import torch
 import h5py
 import numpy as np
+import pandas as pd
 
 
 class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
-    def __init__(self, length, csv, hdf5, stride, count, offset_pos):
+    def __init__(self, length, df, hdf5, stride, count, offset_pos, L=6000):
         super().__init__()
+        self.data_length = length
+        self.df = df
+        self.hdf5 = hdf5
+        self.L = L
+        self.stride = stride
+        self.count = count
+        self.offset_pos = offset_pos
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            start_i = index.start or 0
+            stop_i = index.stop or len(self)
+            step_i = index.step or 1
+
+            items = []
+            for i in range(start_i, stop_i, step_i):
+                items.append(self._get_single(i))
+            return items
+
+        else:
+            return self._get_single(index)
+
+    def _get_single(self, index: int):
+        slide_count = (self.L - self.data_length) // self.stride + 1
+        x_index = (index // slide_count) + self.offset_pos
+        x_start = (index % slide_count) * self.stride
+        x_end = x_start + self.data_length
+
+        df = self.df.iloc[x_index]
+        hdf = self.hdf5.get("data/" + str(df.trace_name))
+        attrs = hdf.attrs
+        xx = WavePreproccesingFromHDF(hdf).get()
+        x = torch.from_numpy(xx[x_start:x_end]).permute(0, 1)
+
+        label = [0.0 for i in range(0, self.data_length)]
+        p_arrived_sample = float(attrs["p_arrival_sample"])
+        s_arrived_sample = float(attrs["s_arrival_sample"])
+
+        event_start = p_arrived_sample
+        event_end = s_arrived_sample
+
+        start = int(event_start - x_start if event_start >= x_start else 0)
+        if start:
+            end = int(event_end - x_start if event_end <= x_end else x_end - x_start)
+            # print(x_start, x_end, start, end)
+            # print(len(label))
+
+            for j in range(start, end):
+                label[j] = 1.0
+
+        found_earthquake = (x_start < event_end) and (x_end > event_start)
+        found_earthquake = found_earthquake or (x_start < event_start < x_end)
+
+        label = torch.tensor([label], dtype=torch.float32)
+
+        return x, label
 
 
 class EarthQuakeWaveSlidingWindowNumpyDataset(Dataset):
@@ -77,10 +134,11 @@ class DataLoader:
     def __init__(self, hdf5, csv, x_test, x_train, y_test, y_train):
         self.source = None
         if hdf5 is not None:
-            self.hdf5 = hdf5
             self.source = "hdf5"
             if csv is not None:
                 raise ValueError("csv must be used with hdf5")
+            self.df = pd.read_csv(csv)
+            self.hdf5 = h5py.File(hdf5, "r")
 
         elif x_test != None and x_train != None and y_test != None and y_train != None:
             self.source = "np"
@@ -106,3 +164,10 @@ class DataLoader:
                 return EarthQuakeWaveSlidingWindowNumpyDataset(
                     length, self.X_train, self.y_train, stride, count, offset_pos
                 )
+
+        elif self.source == "hdf5":
+            if count is None:
+                count = self.X_test.shape[0]
+            return EarthQuakeWaveSlidingWindowHDF5Dataset(
+                length, self.df, self.hdf5, stride, count, offset_pos
+            )

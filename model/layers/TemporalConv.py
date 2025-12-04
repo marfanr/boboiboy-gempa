@@ -14,8 +14,6 @@ class TemporalConvLayer(nn.Module):
     def forward(self, x):
         res = self.res(x)
         out = torch.relu(self.conv1(x))
-        out = self.do(out)
         out = torch.relu(self.conv2(out))
-        out = self.do(out)
 
         return torch.relu(out + res)

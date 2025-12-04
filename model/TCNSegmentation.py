@@ -10,16 +10,16 @@ class EncoderBlock(nn.Module):
     def __init__(self, in_ch, out_ch, ksize=3, pool=True):
         super().__init__()
         layers = [
-            nn.Conv1d(in_ch, out_ch, ksize, padding=ksize//2),
+            nn.Conv1d(in_ch, out_ch, ksize, padding=ksize // 2),
             nn.BatchNorm1d(out_ch),
             nn.ReLU(inplace=True),
-            nn.Conv1d(out_ch, out_ch, ksize, padding=ksize//2),
+            nn.Conv1d(out_ch, out_ch, ksize, padding=ksize // 2),
             nn.BatchNorm1d(out_ch),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         ]
         self.conv = nn.Sequential(*layers)
         self.pool = nn.MaxPool1d(2) if pool else nn.Identity()
-    
+
     def forward(self, x):
         x = self.conv(x)
         skip = x
@@ -29,28 +29,31 @@ class EncoderBlock(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size=3):
         super().__init__()
-        self.conv = nn.Sequential(
-            # 1. Perbesar ukuran sinyal (misal: dari 63 -> 126)
-            nn.Upsample(scale_factor=2, mode="linear", align_corners=False),
-            # 2. Olah fiturnya
-            nn.Conv1d(in_ch, out_ch, kernel_size, padding=kernel_size // 2),
+
+        # --- Main path ---
+        self.main = nn.Sequential(
+            # upsample (in_ch -> out_ch)
+            nn.ConvTranspose1d(in_ch, out_ch, kernel_size=4, stride=2, padding=1),
+
+            # conv (out_ch -> out_ch)
+            nn.Conv1d(out_ch, out_ch, kernel_size, padding=kernel_size // 2, bias=False),
             nn.BatchNorm1d(out_ch),
         )
 
-        layers = [nn.Upsample(scale_factor=2, mode="linear", align_corners=False)]
+        # --- Shortcut path ---
+        shortcut_layers = [
+            nn.ConvTranspose1d(in_ch, out_ch, kernel_size=4, stride=2, padding=1)
+        ]
 
-        # Jika channel berubah, tambahkan 1x1 Conv untuk menyesuaikan channel
+        # jika butuh penyesuaian channel (in_ch != out_ch)
         if in_ch != out_ch:
-            layers.append(nn.Conv1d(in_ch, out_ch, kernel_size=1, bias=False))
-            layers.append(nn.BatchNorm1d(out_ch))
+            shortcut_layers.append(nn.Conv1d(out_ch, out_ch, kernel_size=1, bias=False))
+            shortcut_layers.append(nn.BatchNorm1d(out_ch))
 
-        self.shortcut = nn.Sequential(*layers)
+        self.shortcut = nn.Sequential(*shortcut_layers)
 
     def forward(self, x):
-        skip = x
-        x = self.conv(x)
-        skip = self.shortcut(skip)
-        return torch.relu(x + skip)
+        return torch.relu(self.main(x) + self.shortcut(x))
 
 
 @ModelLoader.register("TCNSegmentation")
