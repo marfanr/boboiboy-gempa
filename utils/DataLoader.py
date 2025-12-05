@@ -36,9 +36,10 @@ class EarthQuakeWaveSlidingWindowHDF5IterableDataset(IterableDataset):
         df = self.df.iloc[x_index]
         hdf = self.hdf5.get("data/" + str(df.trace_name))
         attrs = hdf.attrs
+        data = np.array(hdf)[:, :3]
 
-        xx = WavePreproccesingFromHDF(hdf).get()
-        x = torch.from_numpy(xx[x_start:x_end])
+        # xx = WavePreproccesingFromHDF(hdf).get()
+        x = torch.from_numpy(data[x_start:x_end])
 
         label = [0.0 for _ in range(self.length)]
 
