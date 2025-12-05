@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--y_test", help="np file", type=str)
     parser.add_argument("--y_train", help="np file", type=str)
     parser.add_argument("--model", type=str)
-    parser.add_argument("--batch", type=float, default=32)
+    parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--max_epoch", type=float, default=15)
     parser.add_argument("--weight", type=str)
     parser.add_argument("--out", type=str)
@@ -63,24 +63,41 @@ def main():
         1000, args.stride, args.test_count, args.test_pos, True
     )
 
-    train_dataLoader = DataLoader(
-        train_ds,
-        args.batch,
-        False,
-        num_workers=8,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=4,
-    )
-    test_dataLoader = DataLoader(
-        test_ds,
-        args.batch,
-        False,
-        num_workers=8,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=4,
-    )
+    if args.hdf5 is not None and args.csv is not None:
+        train_dataLoader = DataLoader(
+            train_ds,
+            args.batch,
+            False,
+            num_workers=8,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=4,
+        )
+        test_dataLoader = DataLoader(
+            test_ds,
+            args.batch,
+            False,
+            num_workers=8,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=4,
+        )
+        
+    else:
+        train_dataLoader = DataLoader(
+            train_ds,
+            args.batch,
+            False,
+            num_workers=0,
+            pin_memory=True,
+        )
+        test_dataLoader = DataLoader(
+            test_ds,
+            args.batch,
+            False,
+            num_workers=0,
+            pin_memory=True,
+        )
 
     if args.mode == "train":
         trainer = Trainer(train_dataLoader, test_dataLoader, model)
