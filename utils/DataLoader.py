@@ -57,8 +57,7 @@ class EarthQuakeWaveSlidingWindowHDF5IterableDataset(IterableDataset):
             end_idx = min(self.length, int(event_end - x_start))
             if start_idx < end_idx:
                 label[start_idx:end_idx] = 1.0
-            label = label.unsqueeze(0)  # [1, L]
-            label = torch.tensor(label, dtype=torch.float32)
+            label = torch.tensor([label], dtype=torch.float32)
 
         return x.permute(1, 0), label
 
