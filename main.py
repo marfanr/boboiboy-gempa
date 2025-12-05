@@ -66,7 +66,7 @@ def main():
     if args.hdf5 is not None and args.csv is not None:
         train_dataLoader = DataLoader(
             train_ds,
-            args.batch,
+            int(args.batch),
             False,
             num_workers=8,
             pin_memory=True,
@@ -75,7 +75,7 @@ def main():
         )
         test_dataLoader = DataLoader(
             test_ds,
-            args.batch,
+            int(args.batch),
             False,
             num_workers=8,
             pin_memory=True,
