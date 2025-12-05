@@ -94,7 +94,7 @@ class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
     def _ensure_hdf5_open(self):
         if self.hdf5 is None:
             # setiap worker buka file sendiri
-            self.hdf5 = h5py.File(self.hdf5_path, "r")
+            self.hdf5 = h5py.File(self.hdf5_path, "r", swmr=True)
 
     def __len__(self):
         return int(self.count * (((self.L - self.data_length) // self.stride) + 1))
@@ -139,8 +139,10 @@ class EarthQuakeWaveSlidingWindowHDF5Dataset(Dataset):
             # print(x_start, x_end, start, end)
             # print(len(label))
 
-            for j in range(start, end):
-                label[j] = 1.0
+            label = torch.zeros(self.length, dtype=torch.float32)
+            if start < end:
+                label[start:end] = 1.0
+            
 
         found_earthquake = (x_start < event_end) and (x_end > event_start)
         found_earthquake = found_earthquake or (x_start < event_start < x_end)
