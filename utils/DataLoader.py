@@ -39,7 +39,7 @@ class EarthQuakeWaveSlidingWindowHDF5IterableDataset(IterableDataset):
         data = np.array(hdf)[:, :3]
 
         # xx = WavePreproccesingFromHDF(hdf).get()
-        x = torch.from_numpy(data[x_start:x_end].astype(np.float32))
+        x = torch.from_numpy(data[x_start:x_end])
 
         label = [0.0 for _ in range(self.length)]
 
@@ -53,11 +53,10 @@ class EarthQuakeWaveSlidingWindowHDF5IterableDataset(IterableDataset):
         if start:
             end = int(event_end - x_start if event_end <= x_end else x_end - x_start)
             label = torch.zeros(self.length, dtype=torch.float32)
-            start_idx = max(0, int(event_start - x_start))
-            end_idx = min(self.length, int(event_end - x_start))
-            if start_idx < end_idx:
-                label[start_idx:end_idx] = 1.0
-            label = torch.tensor([label], dtype=torch.float32)
+            if start < end:
+                label[start:end] = 1.0
+
+        label = torch.tensor([label], dtype=torch.float32)
 
         return x.permute(1, 0), label
 
