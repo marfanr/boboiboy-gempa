@@ -5,6 +5,7 @@ from utils.DataLoader import DataLoader as InternalDataLoader
 from torch.utils.data import DataLoader
 from torchinfo import summary
 from utils.Writer import TensorWriter
+from model.parser import ConfigParser
 
 def main():
     parser = argparse.ArgumentParser(description="Gempa")
@@ -16,6 +17,8 @@ def main():
     parser.add_argument("--x_train", help="np file", type=str)
     parser.add_argument("--y_test", help="np file", type=str)
     parser.add_argument("--y_train", help="np file", type=str)
+    parser.add_argument("--meta_test", help="np file", type=str)
+    parser.add_argument("--meta_train", help="np file", type=str)
     parser.add_argument("--model", type=str)
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--max_epoch", type=float, default=15)
@@ -37,6 +40,11 @@ def main():
         for i in ModelLoader.list_keys():
             print(i)
         return
+    
+    if args.mode == "debug":
+        cfg = args.cfg
+        print(cfg)
+        return
 
     if args.model is None:
         raise ValueError("--model is required")
@@ -56,19 +64,15 @@ def main():
         logger = TensorWriter(model.__class__.__name__, args.log)
     
     #  create data loader from data
-    data_loader = InternalDataLoader(
-        args.hdf5,
-        args.csv,
-        args.x_test,
-        args.x_train,
-        args.y_test,
-        args.y_train,
-    )
+    data_loader = InternalDataLoader(args=args)
 
     train_ds = data_loader.getDataset(1000, args.stride, args.count, args.pos, False)
     test_ds = data_loader.getDataset(
         1000, args.stride, args.test_count, args.test_pos, True
     )
+    
+    print(train_ds[0][0].shape, train_ds[0][1].shape)
+    print(train_ds.count(), test_ds.count())
 
     if args.hdf5 is not None and args.csv is not None:
         train_dataLoader = DataLoader(

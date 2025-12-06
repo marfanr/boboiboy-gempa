@@ -81,6 +81,9 @@ class EarthQuakeWaveSlidingWindowHDF5IterableDataset(IterableDataset):
 
 
 class EarthQuakeWaveSlidingWindowNumpyDataset(Dataset):
+    """
+    @deprecated
+    """
     def __init__(self, length, x, y, stride, count, offset_pos):
         self.data_length = length
         self.x = x
@@ -142,42 +145,106 @@ class EarthQuakeWaveSlidingWindowNumpyDataset(Dataset):
         label = torch.tensor([label], dtype=torch.float32)
         return x, label
 
+class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
+    def __init__(self, length, x, y, meta, stride, count, offset_pos, x_margin=500):
+        self.data_length = length
+        self.x = x
+        self.y = y
+        self.meta = meta
+        self.L = self.x.shape[1]
+        self.stride = stride
+        self.count = count
+        self.offset_pos = offset_pos
+        self.len = 0
+        self.x_margin = x_margin
+        
+        self.windows = []
+        
+        data_x = x[offset_pos:]
+        data_y = y[offset_pos:]
+        for sample_idx in range(len(x)):
+            P = y[sample_idx, 0]
+            S = y[sample_idx, 1]
+            start_interval = max(0, int(P - x_margin))
+            end_interval = min(x.shape[1], int(S + x_margin))
+            interval_len = end_interval - start_interval
+            if interval_len >= self.data_length:
+                for w_start in range(start_interval, end_interval - self.data_length + 1, stride):
+                    self.windows.append((sample_idx, w_start))
+        
+
+    def __len__(self):
+        return len(self.windows)
+
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return [self._get_single(i) for i in range(idx.start or 0, idx.stop or len(self), idx.step or 1)]
+        else:
+            return self._get_single(idx)
+
+    def _get_single(self, idx: int):
+        sample_idx, x_start = self.windows[idx]
+        x_end = x_start + self.data_length
+        x_window = torch.from_numpy(self.x[sample_idx, x_start:x_end]).float().T
+        # kalau multi-channel: x_window = x_window.T
+
+        # buat label window hanya di interval P-S
+        label = torch.zeros(self.data_length, dtype=torch.float32)
+        P = float(self.y[sample_idx, 0])
+        S = float(self.y[sample_idx, 1])
+
+        event_start = max(P - self.x_margin, 0)
+        event_end = min(S + self.x_margin, self.x.shape[1])
+
+        # overlap antara window dan event
+        start_idx = max(0, int(event_start - x_start))
+        end_idx = min(self.data_length, int(event_end - x_start))
+
+        if start_idx < end_idx:
+            label[start_idx:end_idx] = 1.0
+
+        return x_window, label.unsqueeze(0)
+
 
 class DataLoader:
-    def __init__(self, hdf5, csv, x_test, x_train, y_test, y_train):
+    def __init__(self, args):
         self.source = None
-        if hdf5 is not None:
+        if args.hdf5 is not None:
             self.source = "hdf5"
-            if csv is None:
+            if args.csv is None:
                 raise ValueError("csv must be used with hdf5")
-            self.df = pd.read_csv(csv)
-            self.hdf5 = hdf5
+            self.df = pd.read_csv(args.csv)
+            self.hdf5 = args.hdf5
 
-        elif x_test != None and x_train != None and y_test != None and y_train != None:
+        else:
             self.source = "np"
-            self.X_train = np.load(x_train, mmap_mode="r").astype(np.float32)[:]
-            self.X_test = np.load(x_test, mmap_mode="r").astype(np.float32)[:]
-            self.y_train = np.load(y_train, mmap_mode="r")[:]
-            self.y_test = np.load(y_test, mmap_mode="r")[:]
+            self.X_train = np.load(args.x_train, mmap_mode="r").astype(np.float32)[:]
+            self.X_test = np.load(args.x_test, mmap_mode="r").astype(np.float32)[:]
+            self.y_train = np.load(args.y_train, mmap_mode="r")[:]
+            self.y_test = np.load(args.y_test, mmap_mode="r")[:]
+            self.meta_train = np.load(args.meta_train, allow_pickle=True)
+            self.meta_test = np.load(args.meta_test, allow_pickle=True)
+            print(f"X_train: {self.X_train.shape}")
+            print(f"X_test: {self.X_test.shape}")
 
-        if self.source is None:
-            raise ValueError("one of data source must be available")
+
 
     def getDataset(self, length, stride, count, offset_pos, is_test):
         if self.source == "np":
             if is_test:
                 if count is None:
                     count = self.X_test.shape[0]
-                return EarthQuakeWaveSlidingWindowNumpyDataset(
-                    length, self.X_test, self.y_test, stride, count, offset_pos
+                return EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(
+                    length, self.X_test,  self.y_test, self.meta_test, stride, count, offset_pos
                 )
             else:
                 if count is None:
                     count = self.X_train.shape[0]
-                return EarthQuakeWaveSlidingWindowNumpyDataset(
-                    length, self.X_train, self.y_train, stride, count, offset_pos
+                return EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(
+                    length, self.X_train, self.y_train, self.meta_train, stride, count, offset_pos
                 )
 
+        # TODO: add chunk system saat pakai hdf5
         elif self.source == "hdf5":
             if count is None:
                 count = self.X_test.shape[0]

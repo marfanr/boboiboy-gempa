@@ -66,8 +66,8 @@ class Trainer:
 
         self.optimizer = optimizer
         if self.optimizer is None:
-            self.optimizer = optimizer = torch.optim.AdamW(
-                model.parameters(), lr=0.00001, foreach=False
+            self.optimizer = optimizer = torch.optim.Adam(
+                model.parameters(), lr=0.001, foreach=False
             )
 
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
@@ -133,6 +133,9 @@ class Trainer:
         metrics = self.evaluator.state.metrics
         print(
             f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}, Val Acc: {metrics['accuracy']:.4f}"
+        )
+        print(
+            f"scheduler state: {self.scheduler.state_dict()}"
         )
         if self.logger is not None:
             self.logger.write_scalar("val", "loss", metrics["loss"], epoch)
