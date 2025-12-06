@@ -5,10 +5,10 @@ from .layers.TemporalConv import TemporalConvLayer
 from .loader import ModelLoader
 from torch.functional import F
 
-
 class EncoderBlock(nn.Module):
     def __init__(self, in_ch, out_ch, ksize=3, pool=True):
         super().__init__()
+        self.__class__.__name__ = "EncoderBlock"
         layers = [
             nn.Conv1d(in_ch, out_ch, ksize, padding=ksize // 2),
             nn.BatchNorm1d(out_ch),
@@ -26,17 +26,20 @@ class EncoderBlock(nn.Module):
         x = self.pool(x)
         return x
 
+
 class DecoderBlock(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size=3):
         super().__init__()
+        self.__class__.__name__ = "DecoderBlock"
 
         # --- Main path ---
         self.main = nn.Sequential(
             # upsample (in_ch -> out_ch)
             nn.ConvTranspose1d(in_ch, out_ch, kernel_size=4, stride=2, padding=1),
-
             # conv (out_ch -> out_ch)
-            nn.Conv1d(out_ch, out_ch, kernel_size, padding=kernel_size // 2, bias=False),
+            nn.Conv1d(
+                out_ch, out_ch, kernel_size, padding=kernel_size // 2, bias=False
+            ),
             nn.BatchNorm1d(out_ch),
         )
 
@@ -60,6 +63,7 @@ class DecoderBlock(nn.Module):
 class Models(nn.Module):
     def __init__(self, levels=4):
         super().__init__()
+        self.__class__.__name__ = "TCNSegmentation"
 
         self.enc1 = EncoderBlock(3, 8, 9)
         self.enc2 = EncoderBlock(8, 16, 7)

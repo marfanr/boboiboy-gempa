@@ -4,7 +4,7 @@ from trainer import Trainer
 from utils.DataLoader import DataLoader as InternalDataLoader
 from torch.utils.data import DataLoader
 from torchinfo import summary
-
+from utils.Writer import TensorWriter
 
 def main():
     parser = argparse.ArgumentParser(description="Gempa")
@@ -27,6 +27,10 @@ def main():
     parser.add_argument("--stride", type=int, default=100)
     parser.add_argument("--pos", type=int, default=0)
     parser.add_argument("--test_pos", type=int, default=0)
+    parser.add_argument("--dist", type=bool, default=False)
+    parser.add_argument("--log", type=str)
+    parser.add_argument("--cfg", type=str)
+
     args = parser.parse_args()
 
     if args.mode == "ls":
@@ -40,14 +44,17 @@ def main():
     model = ModelLoader.get(args.model)
 
     if args.mode == "info":
-        m = model
         summary(
-            m,
+            model,
             input_size=(128, 3, 1000),
             col_names=["input_size", "output_size", "num_params"],
         )
         return
-
+    
+    logger = None
+    if args.log is not None:
+        logger = TensorWriter(model.__class__.__name__, args.log)
+    
     #  create data loader from data
     data_loader = InternalDataLoader(
         args.hdf5,
@@ -82,7 +89,7 @@ def main():
             persistent_workers=True,
             prefetch_factor=4,
         )
-        
+
     else:
         train_dataLoader = DataLoader(
             train_ds,
@@ -100,7 +107,7 @@ def main():
         )
 
     if args.mode == "train":
-        trainer = Trainer(train_dataLoader, test_dataLoader, model)
+        trainer = Trainer(train_dataLoader, test_dataLoader, model, logger=logger)
         if args.hdf5 is not None:
             print("using hdf5")
         trainer.train(args.max_epoch, args.weight, args.out)

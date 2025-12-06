@@ -10,6 +10,12 @@ from ignite.handlers import EarlyStopping
 import time
 import torch
 from ignite.handlers import ModelCheckpoint
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.multiprocessing as mp
+import torch.distributed as dist
+from utils.Writer import TensorWriter
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
 
 try:
     # 1. Prioritas Pertama: Cek CUDA (NVIDIA GPU)
@@ -43,6 +49,7 @@ class Trainer:
         train: DataLoader,
         test: DataLoader,
         model: nn.Module,
+        logger: TensorWriter = None,
         optimizer=None,
         criterion=None,
     ):
@@ -51,21 +58,25 @@ class Trainer:
         self.model = model
         if torch.cuda.device_count() > 1:
             print("Using", torch.cuda.device_count(), "GPUs")
-            model = nn.DataParallel(model)
+            model = DDP(
+                model,
+            )
 
         model = model.to(device=device)
 
         self.optimizer = optimizer
         if self.optimizer is None:
-            self.optimizer = optimizer = torch.optim.SGD(
-                model.parameters(), lr=0.0001, momentum=0.9
+            self.optimizer = optimizer = torch.optim.AdamW(
+                model.parameters(), lr=0.00001, foreach=False
             )
 
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
+
+        self.logger = logger
         # optimizer.load_state_dict(best_checkpoints['optimizer'])
         self.criterion = criterion
         if self.criterion is None:
             self.criterion = nn.BCEWithLogitsLoss()
-            
 
     def train_step(self, engine, batch):
         self.model.train()
@@ -107,26 +118,39 @@ class Trainer:
 
     def eent_on_epoch_complete(self, engine):
         epoch = engine.state.epoch
-        loss = engine.state.output
-
-        EPS = 1e-8
 
         print(f"Model saved at {self.output} {epoch}.pth")
         print("1 epoch complete")
         self.evaluator.run(self.test_dl)
         self.best_checkpointer(
-            self.evaluator, {"model": self.model, "optimizer": self.optimizer}
+            self.evaluator,
+            {
+                "model": self.model,
+                "optimizer_state": self.optimizer,
+                "scheduler_state": self.scheduler,
+            },
         )
         metrics = self.evaluator.state.metrics
         print(
             f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}, Val Acc: {metrics['accuracy']:.4f}"
         )
-        
+        if self.logger is not None:
+            self.logger.write_scalar("val", "loss", metrics["loss"], epoch)
+            self.logger.write_scalar("val", "accuracy", metrics["accuracy"], epoch)
+
+        self.scheduler.step()
+
     def _prepare_batch(self, batch, device):
         x, y = batch
-        return x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+        return x.to(device), y.to(device)
 
-    def train(self, max_epoch, weight, output):
+    def _per_iterate_log(self, engine):
+        if self.logger is not None:
+            self.logger.write_scalar(
+                "train", "loss", engine.state.output, engine.state.iteration
+            )
+
+    def train(self, max_epoch, weight, output, distributed=False):
         self.trainer = Engine(self.train_step)
         self.evaluator = create_supervised_evaluator(
             self.model,
@@ -137,14 +161,13 @@ class Trainer:
                 ),
             },
             device=device,
-            prepare_batch=self._prepare_batch
         )
         self.output = output
         if self.output is None:
             self.output = "checkpoints"
 
         self.best_checkpointer = ModelCheckpoint(
-            filename_prefix="best",
+            filename_prefix=f"best-{self.model.__class__.__name__}-{int(time.time())}",
             dirname=self.output,
             n_saved=1,  # simpan 1 best
             score_function=lambda engine: -engine.state.metrics[
@@ -157,9 +180,14 @@ class Trainer:
 
         if weight is not None:
             best_checkpoints = torch.load(
-                weight, map_location=device
+                weight, map_location="cpu"
             )  # atau device lain
             self.model.load_state_dict(best_checkpoints["model"])
+            self.model = self.model.to(device=device)
+            if "optimizer_state" in best_checkpoints:
+                self.optimizer.load_state_dict(best_checkpoints["optimizer_state"])
+            if "scheduler_state" in best_checkpoints:
+                self.scheduler.load_state_dict(best_checkpoints["scheduler_state"])
 
         early_stopping = EarlyStopping(
             patience=5, score_function=self.score_function, trainer=self.trainer
@@ -171,5 +199,7 @@ class Trainer:
         self.trainer.add_event_handler(
             Events.EPOCH_COMPLETED, self.eent_on_epoch_complete
         )
-
+        self.trainer.add_event_handler(
+            Events.ITERATION_COMPLETED, self._per_iterate_log
+        )
         self.trainer.run(self.train_dl, max_epochs=max_epoch)
