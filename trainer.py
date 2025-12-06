@@ -53,6 +53,7 @@ class Trainer:
         optimizer=None,
         criterion=None,
     ):
+        print(f"iterasi_per_epoch {len(train)} , {len(test)}")
         self.train_dl = train
         self.test_dl = test
         self.model = model
@@ -113,7 +114,7 @@ class Trainer:
         timestamp = time.strftime("%H:%M:%S", time.localtime())
 
         print(
-            f"[{timestamp}] Epoch {current_epoch} | Iter {current_iter} - Loss: {loss:.4f}"
+            f"[{timestamp}] Epoch {current_epoch} | Iter {current_iter} / {engine.state.epoch_length} - Loss: {loss:.4f}"
         )
 
     def eent_on_epoch_complete(self, engine):

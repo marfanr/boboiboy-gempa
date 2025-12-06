@@ -7,6 +7,8 @@ from torchinfo import summary
 from utils.Writer import TensorWriter
 from model.parser import ConfigParser
 
+supported_mode = ["train", "test", "ls", "debug"]
+
 def main():
     parser = argparse.ArgumentParser(description="Gempa")
 
@@ -19,6 +21,8 @@ def main():
     parser.add_argument("--y_train", help="np file", type=str)
     parser.add_argument("--meta_test", help="np file", type=str)
     parser.add_argument("--meta_train", help="np file", type=str)
+    parser.add_argument("--npz_train", help="np file", type=str)
+    parser.add_argument("--npz_test", help="np file", type=str)
     parser.add_argument("--model", type=str)
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--max_epoch", type=float, default=15)
@@ -35,6 +39,10 @@ def main():
     parser.add_argument("--cfg", type=str)
 
     args = parser.parse_args()
+    
+    if args.mode not in supported_mode:
+        raise ValueError(f"Mode {args.mode} not supported")
+    
 
     if args.mode == "ls":
         for i in ModelLoader.list_keys():
@@ -43,7 +51,8 @@ def main():
     
     if args.mode == "debug":
         cfg = args.cfg
-        print(cfg)
+        parser = ConfigParser(cfg)
+        print(parser.parse())
         return
 
     if args.model is None:
@@ -72,7 +81,7 @@ def main():
     )
     
     print(train_ds[0][0].shape, train_ds[0][1].shape)
-    print(train_ds.count(), test_ds.count())
+    print(len(train_ds), len(test_ds))
 
     if args.hdf5 is not None and args.csv is not None:
         train_dataLoader = DataLoader(
