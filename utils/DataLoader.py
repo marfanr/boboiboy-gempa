@@ -239,6 +239,7 @@ class DataLoader:
                 raise ValueError("csv must be used with hdf5")
             self.df = pd.read_csv(args.csv)
             self.hdf5 = args.hdf5
+            print("using hdf5 and csv")
             
         if args.train_npz is not None:
             self.source = "npz"
