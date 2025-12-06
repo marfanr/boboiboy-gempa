@@ -241,7 +241,7 @@ class DataLoader:
             self.hdf5 = args.hdf5
             print("using hdf5 and csv")
             
-        if args.train_npz is not None:
+        elif args.train_npz is not None:
             self.source = "npz"
             train_data =  np.load(args.train_npz, mmap_mode="r", allow_pickle=True)
             test_data =  np.load(args.test_npz, mmap_mode="r", allow_pickle=True)
