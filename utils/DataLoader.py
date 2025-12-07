@@ -171,9 +171,11 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
 
         self.windows = []
 
-        self.data_x = x[offset_pos : offset_pos + count ]
-        self.data_y = y[offset_pos : offset_pos + count]
-        for sample_idx in range(len(self.data_x)):
+
+        start = offset_pos
+        end   = offset_pos + count
+        
+        for sample_idx in range(start, end):
             P = y[sample_idx, 0]
             S = y[sample_idx, 1]
             start_interval = max(0, int(P - x_margin))
