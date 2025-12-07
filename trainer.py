@@ -69,7 +69,7 @@ class Trainer:
         self.optimizer = optimizer
         if self.optimizer is None:
             self.optimizer = optimizer = torch.optim.Adam(
-                model.parameters(), lr=0.0001, foreach=False
+                model.parameters(), lr=0.0001, foreach=False, weight_decay=1e-6
             )
 
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
