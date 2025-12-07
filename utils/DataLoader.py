@@ -236,19 +236,19 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
 
         P = float(self.y[sample_idx, 0])
         S = float(self.y[sample_idx, 1])
+        
+        P_in_window = P - x_start
+        S_in_window = S - x_start
+        
+        label_margin = 50  
+        start_in_window = P_in_window - label_margin
+        end_in_window = S_in_window + label_margin
 
-        # event hanya di sekitar P-S, margin untuk label kecil saja
-        label_margin = 50  # misal 50 sample, bebas kamu atur
+        event_start = int(max(0, start_in_window))
+        event_end = int(min(self.data_length, end_in_window))
 
-        event_start = max(int(P - label_margin), 0)
-        event_end = min(int(S + label_margin), self.x.shape[1])
-
-        # hitung overlap window dengan event
-        start_idx = max(0, event_start - x_start)
-        end_idx = min(self.data_length, event_end - x_start)
-
-        if start_idx < end_idx:
-            label[start_idx:end_idx] = 1.0
+        if event_start < event_end:
+            label[event_start:event_end] = 1.0
 
         return x_window, label.unsqueeze(0)
     
