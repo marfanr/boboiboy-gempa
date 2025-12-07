@@ -57,11 +57,12 @@ class Trainer:
         self.train_dl = train
         self.test_dl = test
         self.model = model
-        if torch.cuda.device_count() > 1:
-            print("Using", torch.cuda.device_count(), "GPUs")
-            model = DDP(
-                model,
-            )
+        #TODO
+        # if torch.cuda.device_count() > 1:
+        #     print("Using", torch.cuda.device_count(), "GPUs")
+        #     # model = DDP(
+        #     #     model,
+        #     # )
 
         model = model.to(device=device)
 
@@ -114,7 +115,7 @@ class Trainer:
         timestamp = time.strftime("%H:%M:%S", time.localtime())
 
         print(
-            f"[{timestamp}] Epoch {current_epoch} | Iter {current_iter} / {engine.state.epoch_length} - Loss: {loss:.4f}"
+            f"[{timestamp}] Epoch {current_epoch} | Iter {current_iter} / {current_epoch * engine.state.epoch_length} - Loss: {loss:.4f}"
         )
 
     def eent_on_epoch_complete(self, engine):
