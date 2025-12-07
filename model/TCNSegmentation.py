@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from .layers.SeparableConv import SeparableConvLayer
-from .layers.TemporalConv import TemporalConvLayer
+from .layers.TemporalConv import TemporalConvLayer, DMLDropout
 from .loader import ModelLoader
 from torch.functional import F
 
@@ -13,9 +13,11 @@ class EncoderBlock(nn.Module):
             nn.Conv1d(in_ch, out_ch, ksize, padding=ksize // 2),
             nn.BatchNorm1d(out_ch),
             nn.ReLU(inplace=True),
+            DMLDropout(0.3),
             nn.Conv1d(out_ch, out_ch, ksize, padding=ksize // 2),
             nn.BatchNorm1d(out_ch),
             nn.ReLU(inplace=True),
+            DMLDropout(0.3),
         ]
         self.conv = nn.Sequential(*layers)
         self.pool = nn.MaxPool1d(2) if pool else nn.Identity()
