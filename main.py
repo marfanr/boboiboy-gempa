@@ -6,8 +6,10 @@ from torch.utils.data import DataLoader
 from torchinfo import summary
 from utils.Writer import TensorWriter
 from model.parser import ConfigParser
+from utils.splitter import DataSplitter
 
-supported_mode = ["train", "test", "ls", "debug"]
+supported_mode = ["train", "test", "ls", "debug", "split"]
+
 
 def main():
     parser = argparse.ArgumentParser(description="Gempa")
@@ -39,21 +41,25 @@ def main():
     parser.add_argument("--cfg", type=str)
 
     args = parser.parse_args()
-    
+
     if args.mode not in supported_mode:
         raise ValueError(f"Mode {args.mode} not supported")
-    
 
     if args.mode == "ls":
         for i in ModelLoader.list_keys():
             print(i)
         return
-    
+
     if args.mode == "debug":
         cfg = args.cfg
         parser = ConfigParser(cfg)
         print(parser.parse())
         return
+
+    if args.mode == "split":
+        print("running splitter utility")
+        splitter = DataSplitter(args.hdf5, args.csv, args.out)
+        splitter.split()
 
     if args.model is None:
         raise ValueError("--model is required")
@@ -67,11 +73,11 @@ def main():
             col_names=["input_size", "output_size", "num_params"],
         )
         return
-    
+
     logger = None
     if args.log is not None:
         logger = TensorWriter(model.__class__.__name__, args.log)
-    
+
     #  create data loader from data
     data_loader = InternalDataLoader(args=args)
 
