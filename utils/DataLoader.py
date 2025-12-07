@@ -264,7 +264,7 @@ class DataLoader:
             print(f"X_test: {self.X_test.shape}")
 
     def getDataset(self, length, stride, count, offset_pos, is_test):
-        if self.source == "np":
+        if self.source == "np" or self.source == "npz":
             if is_test:
                 if count is None:
                     count = self.X_test.shape[0]
