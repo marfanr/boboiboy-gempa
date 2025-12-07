@@ -248,6 +248,9 @@ class DataLoader:
             self.X_train = train_data["x"]
             self.y_train = train_data["y"]
             self.meta_train = train_data["meta"]
+            self.X_test = test_data["x"]
+            self.y_test = test_data["y"]
+            self.meta_test = test_data["meta"]
 
         else:
             self.source = "np"
