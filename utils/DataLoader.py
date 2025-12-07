@@ -166,7 +166,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         stride,
         count,
         offset_pos,
-        x_margin=500,
+        x_margin=100,
         normalize=True,
         noise_level=0.01,
     ):
