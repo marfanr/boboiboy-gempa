@@ -14,7 +14,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from utils.Writer import TensorWriter
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 try:
@@ -57,7 +57,7 @@ class Trainer:
         self.train_dl = train
         self.test_dl = test
         self.model = model
-        #TODO
+        # TODO
         # if torch.cuda.device_count() > 1:
         #     print("Using", torch.cuda.device_count(), "GPUs")
         #     # model = DDP(
@@ -72,7 +72,9 @@ class Trainer:
                 model.parameters(), lr=0.0001, foreach=False, weight_decay=1e-6
             )
 
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
+        self.scheduler = ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=5, verbose=True, min_lr=1e-6
+        )
 
         self.logger = logger
         # optimizer.load_state_dict(best_checkpoints['optimizer'])
@@ -137,13 +139,10 @@ class Trainer:
         print(
             f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}, Val Acc: {metrics['accuracy']:.4f}"
         )
-        print(
-            f"scheduler state: {self.scheduler.state_dict()}"
-        )
+        print(f"scheduler state: {self.scheduler.state_dict()}")
         if self.logger is not None:
             self.logger.write_scalar("val", "loss", metrics["loss"], epoch)
             self.logger.write_scalar("val", "accuracy", metrics["accuracy"], epoch)
-
 
     def _prepare_batch(self, batch, device):
         x, y = batch
