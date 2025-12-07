@@ -69,7 +69,7 @@ class Trainer:
         self.optimizer = optimizer
         if self.optimizer is None:
             self.optimizer = optimizer = torch.optim.Adam(
-                model.parameters(), lr=0.001, foreach=False
+                model.parameters(), lr=0.0001, foreach=False
             )
 
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
@@ -124,6 +124,7 @@ class Trainer:
         print(f"Model saved at {self.output} {epoch}.pth")
         print("1 epoch complete")
         self.evaluator.run(self.test_dl)
+        self.scheduler.step()
         self.best_checkpointer(
             self.evaluator,
             {
@@ -143,7 +144,6 @@ class Trainer:
             self.logger.write_scalar("val", "loss", metrics["loss"], epoch)
             self.logger.write_scalar("val", "accuracy", metrics["accuracy"], epoch)
 
-        self.scheduler.step()
 
     def _prepare_batch(self, batch, device):
         x, y = batch

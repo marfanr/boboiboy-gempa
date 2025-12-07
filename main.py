@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--dist", type=bool, default=False)
     parser.add_argument("--log", type=str)
     parser.add_argument("--cfg", type=str)
+    parser.add_argument("--gpu_parallel", type=bool, default=False)
 
     args = parser.parse_args()
 
