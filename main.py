@@ -107,8 +107,6 @@ def main():
         )
 
     else:
-        print(train_ds[0][0].shape, train_ds[0][1].shape)
-        print(len(train_ds), len(test_ds))
         train_dataLoader = DataLoader(
             train_ds,
             args.batch,
