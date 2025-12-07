@@ -8,7 +8,7 @@ from utils.Writer import TensorWriter
 from model.parser import ConfigParser
 from utils.splitter import DataSplitter
 
-supported_mode = ["train", "test", "ls", "debug", "split"]
+supported_mode = ["train", "test", "ls", "debug", "split", "info"]
 
 
 def main():
