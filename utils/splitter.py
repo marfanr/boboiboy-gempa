@@ -31,7 +31,7 @@ class DataSplitter():
         MAX_GB = 8.0
         self.MAX_BYTES = MAX_GB * 1024 * 1024 * 1024
 
-        self.x_data, self.self.y_main, self.y_meta = [], [], []
+        self.x_data, self.y_main, self.y_meta = [], [], []
         self.current_bytes = 0
         self.current_bytes
     
