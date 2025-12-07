@@ -15,6 +15,8 @@ def main():
     parser = argparse.ArgumentParser(description="Gempa")
 
     parser.add_argument("mode", help="train|test|ls", type=str)
+    
+    # data sorces
     parser.add_argument("--hdf5", help="hdf5 file", type=str)
     parser.add_argument("--csv", help="csv file", type=str)
     parser.add_argument("--x_test", help="np file", type=str)
@@ -25,7 +27,11 @@ def main():
     parser.add_argument("--meta_train", help="np file", type=str)
     parser.add_argument("--train_npz", help="np file", type=str)
     parser.add_argument("--test_npz", help="np file", type=str)
+    
+    # model
     parser.add_argument("--model", type=str)
+    
+    # training options
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--max_epoch", type=float, default=15)
     parser.add_argument("--weight", type=str)
