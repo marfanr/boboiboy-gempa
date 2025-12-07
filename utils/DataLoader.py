@@ -227,8 +227,8 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
 
         if self.noise_level > 0:
             if np.random.random() > 0.5:
-                noise = np.random.randn(*x_window.shape) * self.noise_level
-                x_window += torch.from_numpy(noise)
+                noise = torch.randn_like(x_window, device=x_window.device) * self.noise_level
+                x_window += noise
 
 
         # label
