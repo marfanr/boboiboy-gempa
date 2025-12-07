@@ -111,12 +111,12 @@ class DataSplitter():
                     self.y_main.append(y)
                     self.y_meta.append(meta)
 
-                    current_bytes += data.nbytes + y.nbytes + sys.getsizeof(meta)
+                    self.current_bytes += data.nbytes + y.nbytes + sys.getsizeof(meta)
 
-                    if current_bytes >= self.MAX_BYTES:
+                    if self.current_bytes >= self.MAX_BYTES:
                         self.flush_to_disk("train")
 
-                print(f"[BATCH OK] {start}/{len(self.ev_list)} RAM={current_bytes/1e9:.3f} GB")
+                print(f"[BATCH OK] {start}/{len(self.ev_list)} RAM={self.current_bytes/1e9:.3f} GB")
 
         self.flush_to_disk("train")
         print("DONE")
@@ -143,12 +143,12 @@ class DataSplitter():
                     self.y_main.append(y)
                     self.y_meta.append(meta)
 
-                    current_bytes += data.nbytes + y.nbytes + sys.getsizeof(meta)
+                    self.current_bytes += data.nbytes + y.nbytes + sys.getsizeof(meta)
 
-                    if current_bytes >= self.MAX_BYTES:
+                    if self.current_bytes >= self.MAX_BYTES:
                         self.flush_to_disk("test")
 
-                print(f"[BATCH OK] {start}/{len(self.ev_list_test)} RAM={current_bytes/1e9:.3f} GB")
+                print(f"[BATCH OK] {start}/{len(self.ev_list_test)} RAM={self.current_bytes/1e9:.3f} GB")
 
         self.flush_to_disk("test")
         print("DONE")
