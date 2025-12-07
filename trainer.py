@@ -126,7 +126,8 @@ class Trainer:
         print(f"Model saved at {self.output} {epoch}.pth")
         print("1 epoch complete")
         self.evaluator.run(self.test_dl)
-        self.scheduler.step()
+        metrics = self.evaluator.state.metrics
+        self.scheduler.step(metrics=metrics["loss"])
         self.best_checkpointer(
             self.evaluator,
             {
@@ -135,7 +136,6 @@ class Trainer:
                 "scheduler_state": self.scheduler,
             },
         )
-        metrics = self.evaluator.state.metrics
         print(
             f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}, Val Acc: {metrics['accuracy']:.4f}"
         )
