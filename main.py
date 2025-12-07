@@ -79,9 +79,6 @@ def main():
     test_ds = data_loader.getDataset(
         1000, args.stride, args.test_count, args.test_pos, True
     )
-    
-    print(train_ds[0][0].shape, train_ds[0][1].shape)
-    print(len(train_ds), len(test_ds))
 
     if args.hdf5 is not None and args.csv is not None:
         train_dataLoader = DataLoader(
@@ -104,6 +101,8 @@ def main():
         )
 
     else:
+        print(train_ds[0][0].shape, train_ds[0][1].shape)
+        print(len(train_ds), len(test_ds))
         train_dataLoader = DataLoader(
             train_ds,
             args.batch,
