@@ -157,7 +157,19 @@ class EarthQuakeWaveSlidingWindowNumpyDataset(Dataset):
 
 
 class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
-    def __init__(self, length, x, y, meta, stride, count, offset_pos, x_margin=500):
+    def __init__(
+        self,
+        length,
+        x,
+        y,
+        meta,
+        stride,
+        count,
+        offset_pos,
+        x_margin=500,
+        normalize=True,
+        noise_level=0.01,
+    ):
         self.data_length = length
         self.x = x
         self.y = y
@@ -168,13 +180,15 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         self.offset_pos = offset_pos
         self.len = 0
         self.x_margin = x_margin
+        
+        self.normalize = normalize
+        self.noise_level = noise_level
 
         self.windows = []
 
-
         start = offset_pos
-        end   = offset_pos + count
-        
+        end = offset_pos + count
+
         for sample_idx in range(start, end):
             P = y[sample_idx, 0]
             S = y[sample_idx, 1]
@@ -186,7 +200,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
                     start_interval, end_interval - self.data_length + 1, stride
                 ):
                     self.windows.append((sample_idx, w_start))
-                    
+
         print(len(self.windows))
 
     def __len__(self):
@@ -206,9 +220,15 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         x_end = x_start + self.data_length
 
         # window data
-        x_window = torch.from_numpy(
-            self.x[sample_idx, x_start:x_end]
-        ).float().T
+        x_window = torch.from_numpy(self.x[sample_idx, x_start:x_end]).float().T
+        
+        if self.normalize:
+            x_window = self.__normalize(x_window)
+
+        if self.noise_level > 0:
+            noise = torch.randn_like(*x_window.shape) * self.noise_level
+            x_window += noise
+
 
         # label
         label = torch.zeros(self.data_length, dtype=torch.float32)
@@ -217,19 +237,24 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         S = float(self.y[sample_idx, 1])
 
         # event hanya di sekitar P-S, margin untuk label kecil saja
-        label_margin = 50     # misal 50 sample, bebas kamu atur
+        label_margin = 50  # misal 50 sample, bebas kamu atur
 
         event_start = max(int(P - label_margin), 0)
-        event_end   = min(int(S + label_margin), self.x.shape[1])
+        event_end = min(int(S + label_margin), self.x.shape[1])
 
         # hitung overlap window dengan event
         start_idx = max(0, event_start - x_start)
-        end_idx   = min(self.data_length, event_end - x_start)
+        end_idx = min(self.data_length, event_end - x_start)
 
         if start_idx < end_idx:
             label[start_idx:end_idx] = 1.0
 
         return x_window, label.unsqueeze(0)
+    
+    def __normalize(self, wave):
+        mean = wave.mean(dim=1, keepdim=True)
+        std = wave.std(dim=1, keepdim=True) + 1e-6
+        return (wave - mean) / std
 
 
 class DataLoader:
@@ -242,11 +267,11 @@ class DataLoader:
             self.df = pd.read_csv(args.csv)
             self.hdf5 = args.hdf5
             print("using hdf5 and csv")
-            
+
         elif args.train_npz is not None:
             self.source = "npz"
-            train_data =  np.load(args.train_npz, mmap_mode="r", allow_pickle=True)
-            test_data =  np.load(args.test_npz, mmap_mode="r", allow_pickle=True)
+            train_data = np.load(args.train_npz, mmap_mode="r", allow_pickle=True)
+            test_data = np.load(args.test_npz, mmap_mode="r", allow_pickle=True)
             self.X_train = train_data["x"]
             self.y_train = train_data["y"]
             self.meta_train = train_data["meta"]
