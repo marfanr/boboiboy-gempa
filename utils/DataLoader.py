@@ -5,6 +5,7 @@ import h5py
 import numpy as np
 import pandas as pd
 from .loader.h5 import EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset
+from sklearn.model_selection import train_test_split
 
 
 class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
@@ -119,6 +120,16 @@ class DataLoader:
             if args.csv is None:
                 raise ValueError("csv must be used with hdf5")
             self.df = pd.read_csv(args.csv)
+            df = self.df[self.df.trace_category == "earthquake_local"]
+            event_ids = df["source_id"].unique()
+            train_events, test_events = train_test_split(
+                event_ids,
+                test_size=0.2,
+                shuffle=False,
+            )
+            self.df_train = df[df.source_id.isin(train_events)]
+            self.df_test = df[df.source_id.isin(test_events)]
+
             self.hdf5 = args.hdf5
             print("using hdf5 and csv")
 
@@ -173,11 +184,12 @@ class DataLoader:
 
         # TODO: add chunk system saat pakai hdf5
         elif self.source == "hdf5":
+            df_ = self.df_test if is_test else self.df_train            
             if count is None:
-                count = self.X_test.shape[0]
+                count = len(df_)
             return EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(
                 length,
-                self.df,
+                df_,
                 self.hdf5,
                 stride,
                 count,
