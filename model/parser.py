@@ -42,7 +42,8 @@ class ConfigParser:
             if type not in LAYER_REGISTRY:
                 raise ValueError(f"Layer type {type} not registered")
             
+            print(LAYER_REGISTRY[type])
             # (**{k: v for k, v in l.items() if k != "type"}
-            layer = LAYER_REGISTRY[type]().build()
-            print(f"Built layer: {layer}")
+            # layer = LAYER_REGISTRY[type]().build()
+            # print(f"Built layer: {layer}")
         # return layers
