@@ -4,156 +4,7 @@ import torch
 import h5py
 import numpy as np
 import pandas as pd
-import math
-
-
-class EarthQuakeWaveSlidingWindowHDF5IterableDataset(IterableDataset):
-    def __init__(self, length, df, hdf5_path, stride, count, offset_pos, L=6000):
-        super().__init__()
-        self.length = length
-        self.df = df
-        self.hdf5_path = hdf5_path
-        self.hdf5 = None
-        self.L = L
-        self.stride = stride
-        self.count = count
-        self.offset_pos = offset_pos
-
-        # perhitungan jumlah slide per trace
-        self.slide_count = (self.L - self.length) // self.stride + 1
-
-    def _ensure_hdf5_open(self):
-        if self.hdf5 is None:
-            self.hdf5 = h5py.File(self.hdf5_path, "r")
-
-    def _get_single(self, index: int):
-        self._ensure_hdf5_open()
-
-        slide_count = self.slide_count
-        x_index = (index // slide_count) + self.offset_pos
-        x_start = (index % slide_count) * self.stride
-        x_end = x_start + self.length
-
-        df = self.df.iloc[x_index]
-        hdf = self.hdf5.get("data/" + str(df.trace_name))
-        attrs = hdf.attrs
-        data = np.array(hdf)[:, :3]
-
-        # xx = WavePreproccesingFromHDF(hdf).get()
-        x = torch.from_numpy(data[x_start:x_end])
-
-        label = [0.0 for _ in range(self.length)]
-
-        p_arrived_sample = (
-            float(attrs["p_arrival_sample"])
-            if attrs["p_arrival_sample"] not in ["", None]
-            else 0.0
-        )
-        s_arrived_sample = (
-            float(attrs["s_arrival_sample"])
-            if attrs["s_arrival_sample"] not in ["", None]
-            else 0.0
-        )
-
-        event_start = p_arrived_sample
-        event_end = s_arrived_sample
-
-        start = int(event_start - x_start if event_start >= x_start else 0)
-        if start:
-            end = int(event_end - x_start if event_end <= x_end else x_end - x_start)
-            label = torch.zeros(self.length, dtype=torch.float32)
-            if start < end:
-                label[start:end] = 1.0
-
-        label = torch.tensor([label], dtype=torch.float32)
-
-        return x.permute(1, 0), label
-
-    def __iter__(self):
-        worker_info = torch.utils.data.get_worker_info()
-
-        if worker_info is None:
-            # single process
-            start = 0
-            end = self.count
-        else:
-            # bagi data per worker agar tidak overlap
-            per_worker = int(math.ceil(self.count / worker_info.num_workers))
-            start = worker_info.id * per_worker
-            end = min(start + per_worker, self.count)
-
-        # generate indeks sliding streaming
-        for trace_i in range(start, end):
-            base_index = trace_i * self.slide_count
-            for s in range(self.slide_count):
-                yield self._get_single(base_index + s)
-
-
-class EarthQuakeWaveSlidingWindowNumpyDataset(Dataset):
-    """
-    @deprecated
-    """
-
-    def __init__(self, length, x, y, stride, count, offset_pos):
-        self.data_length = length
-        self.x = x
-        self.y = y
-        self.L = self.x.shape[1]
-        self.stride = stride
-        self.count = count
-        self.offset_pos = offset_pos
-
-    def __len__(self):
-        return int(self.count * (((self.L - self.data_length) // self.stride) + 1))
-
-    def __getitem__(self, index):
-        if isinstance(index, slice):
-            start_i = index.start or 0
-            stop_i = index.stop or len(self)
-            step_i = index.step or 1
-
-            items = []
-            for i in range(start_i, stop_i, step_i):
-                items.append(self._get_single(i))
-            return items
-
-        else:
-            return self._get_single(index)
-
-    def _get_single(self, index: int):
-        slide_count = (self.L - self.data_length) // self.stride + 1
-        x_index = (index // slide_count) + self.offset_pos
-        x_start = (index % slide_count) * self.stride
-        x_end = x_start + self.data_length
-        # print(x_index, slide_count, x_start, x_end)
-
-        # preproccessing
-        # x_ = WavePreproccesing(self.x[x_index], self.y[x_index]).get()
-
-        x = torch.from_numpy(self.x[x_index, x_start:x_end]).permute(1, 0)
-        y__ = self.y[x_index]
-
-        label = [0.0 for i in range(0, self.data_length)]
-        p_arrived_sample = float(y__[0])
-        s_arrived_sample = float(y__[1])
-        # print(y__)
-        event_start = p_arrived_sample
-        event_end = s_arrived_sample
-
-        start = int(event_start - x_start if event_start >= x_start else 0)
-        if start:
-            end = int(event_end - x_start if event_end <= x_end else x_end - x_start)
-            # print(x_start, x_end, start, end)
-            # print(len(label))
-
-            for j in range(start, end):
-                label[j] = 1.0
-
-        found_earthquake = (x_start < event_end) and (x_end > event_start)
-        found_earthquake = found_earthquake or (x_start < event_start < x_end)
-
-        label = torch.tensor([label], dtype=torch.float32)
-        return x, label
+from .loader.h5 import EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset
 
 
 class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
@@ -180,7 +31,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         self.offset_pos = offset_pos
         self.len = 0
         self.x_margin = x_margin
-        
+
         self.normalize = normalize
         self.noise_level = noise_level
 
@@ -221,26 +72,28 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
 
         # window data
         x_window = torch.from_numpy(self.x[sample_idx, x_start:x_end]).float().T
-        
+
         if self.normalize:
             x_window = self.__normalize(x_window)
 
         if self.noise_level > 0:
             if np.random.random() > 0.5:
-                noise = torch.randn_like(x_window, device=x_window.device) * self.noise_level
+                noise = (
+                    torch.randn_like(x_window, device=x_window.device)
+                    * self.noise_level
+                )
                 x_window += noise
-
 
         # label
         label = torch.zeros(self.data_length, dtype=torch.float32)
 
         P = float(self.y[sample_idx, 0])
         S = float(self.y[sample_idx, 1])
-        
+
         P_in_window = P - x_start
         S_in_window = S - x_start
-        
-        label_margin = 50  
+
+        label_margin = 50
         start_in_window = P_in_window - label_margin
         end_in_window = S_in_window + label_margin
 
@@ -251,7 +104,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
             label[event_start:event_end] = 1.0
 
         return x_window, label.unsqueeze(0)
-    
+
     def __normalize(self, wave):
         mean = wave.mean(dim=1, keepdim=True)
         std = wave.std(dim=1, keepdim=True) + 1e-6
@@ -322,6 +175,11 @@ class DataLoader:
         elif self.source == "hdf5":
             if count is None:
                 count = self.X_test.shape[0]
-            return EarthQuakeWaveSlidingWindowHDF5IterableDataset(
-                length, self.df, self.hdf5, stride, count, offset_pos
+            return EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(
+                length,
+                self.df,
+                self.hdf5,
+                stride,
+                count,
+                offset_pos,
             )
