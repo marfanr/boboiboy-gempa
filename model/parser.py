@@ -1,7 +1,14 @@
+from .layers.register import LAYER_REGISTRY
+
 class ConfigParser:
     def __init__(self, cfg: str):
         self.file = cfg
-        pass
+        
+        print("Registered layers:")
+        for i in LAYER_REGISTRY:
+            print(i)
+        print("End of registered layers\n")
+        
     
     def parse(self):
         layers = []
@@ -19,7 +26,23 @@ class ConfigParser:
                 layer_dict = {'type': line[1:-1]}  # ambil nama section tanpa []
             else:
                 key, value = line.split('=')
-                layer_dict[key.strip()] = value.strip()
+                layer_dict[(key.strip()).lower()] = value.strip()
         if layer_dict:
             layers.append(layer_dict)
-        return layers
+            
+        print(layers)
+        for l in layers:
+            type = l["type"]
+            print(f"Parsing layer of type: {type}")
+            if type == "net":
+                batch = int(l.get("batch", 32))
+                print(f"Batch size: {batch}")
+                continue
+            
+            if type not in LAYER_REGISTRY:
+                raise ValueError(f"Layer type {type} not registered")
+            
+            # (**{k: v for k, v in l.items() if k != "type"}
+            layer = LAYER_REGISTRY[type]().build()
+            print(f"Built layer: {layer}")
+        # return layers

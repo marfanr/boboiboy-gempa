@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description="Gempa")
 
     parser.add_argument("mode", help="train|test|ls", type=str)
-    
+
     # data sorces
     parser.add_argument("--hdf5", help="hdf5 file", type=str)
     parser.add_argument("--csv", help="csv file", type=str)
@@ -27,10 +27,10 @@ def main():
     parser.add_argument("--meta_train", help="np file", type=str)
     parser.add_argument("--train_npz", help="np file", type=str)
     parser.add_argument("--test_npz", help="np file", type=str)
-    
+
     # model
     parser.add_argument("--model", type=str)
-    
+
     # training options
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--max_epoch", type=float, default=15)
@@ -47,7 +47,7 @@ def main():
     parser.add_argument("--cfg", type=str)
     parser.add_argument("--noice", type=float, default=0.01)
     parser.add_argument("--normalize", type=bool, default=True)
-    
+
     # TODO: to be implemented
     parser.add_argument("--gpu_parallel", type=bool, default=False)
 
@@ -102,19 +102,11 @@ def main():
             train_ds,
             int(args.batch),
             False,
-            num_workers=8,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=4,
         )
         test_dataLoader = DataLoader(
             test_ds,
             int(args.batch),
             False,
-            num_workers=8,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=4,
         )
 
     else:
@@ -137,7 +129,13 @@ def main():
         trainer = Trainer(train_dataLoader, test_dataLoader, model, logger=logger)
         if args.hdf5 is not None:
             print("using hdf5")
-        trainer.train(args.max_epoch, args.weight, args.out)
+            
+        trainer.train(
+            max_epoch=args.max_epoch,
+            weight=args.weight,
+            output=args.out,
+            distributed=args.gpu_parallel,
+        )
 
 
 if __name__ == "__main__":
