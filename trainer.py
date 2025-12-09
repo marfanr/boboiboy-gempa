@@ -68,46 +68,90 @@ class Trainer:
         logger: TensorWriter = None,
         optimizer=None,
         criterion=None,
+        device=None,  # ← Tambahkan parameter device
     ):
         print(f"iterasi_per_epoch {len(train)} , {len(test)}")
         self.train_dl = train
         self.test_dl = test
-        self.model = model
-        # TODO
-        # if torch.cuda.device_count() > 1:
-        #     print("Using", torch.cuda.device_count(), "GPUs")
-        #     # model = DDP(
-        #     #     model,
-        #     # )
-
-        model = model.to(device=device)
-
+        
+        # Set device dengan prioritas: parameter -> CUDA -> DirectML -> CPU
+        if device is None:
+            self.device = self._get_best_device()
+        else:
+            self.device = device
+        
+        print(f"Training akan menggunakan device: {self.device}")
+        
+        # Move model to device
+        self.model = model.to(self.device)
+        
+        # Setup optimizer
         self.optimizer = optimizer
         if self.optimizer is None:
-            self.optimizer = optimizer = torch.optim.SGD(
-                model.parameters(), lr=0.0001, foreach=False, momentum=1e-4, 
+            self.optimizer = torch.optim.SGD(
+                self.model.parameters(), lr=0.0001, foreach=False, momentum=1e-4, 
             )
 
         self.scheduler = ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=5,  min_lr=1e-6
+            self.optimizer, mode="min", factor=0.5, patience=5, min_lr=1e-6
         )
 
         self.logger = logger
-        # optimizer.load_state_dict(best_checkpoints['optimizer'])
+        
+        # Setup criterion
         self.criterion = criterion
         if self.criterion is None:
-            self.criterion = nn.BCEWithLogitsLoss()
-            # self.criterion = BCEWithLogitsDML().to(device=device)
+            # Gunakan custom BCEWithLogitsDML jika menggunakan DirectML
+            if "privateuseone" in str(self.device):  # DirectML menggunakan privateuseone
+                self.criterion = BCEWithLogitsDML().to(self.device)
+                print("Menggunakan BCEWithLogitsDML untuk DirectML")
+            else:
+                self.criterion = nn.BCEWithLogitsLoss()
+
+    def _get_best_device(self):
+        """
+        Deteksi device terbaik dengan prioritas:
+        1. CUDA (NVIDIA GPU)
+        2. DirectML (AMD/Intel GPU di Windows)
+        3. CPU
+        """
+        try:
+            # Prioritas 1: CUDA
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+                print(f"✓ CUDA tersedia: {torch.cuda.get_device_name(0)}")
+                print(f"  - CUDA device count: {torch.cuda.device_count()}")
+                return device
+            
+            # Prioritas 2: DirectML
+            try:
+                import torch_directml
+                device = torch_directml.device()
+                print(f"✓ DirectML tersedia: {device}")
+                return device
+            except ImportError:
+                print("✗ DirectML tidak terinstall")
+            except Exception as e:
+                print(f"✗ DirectML error: {e}")
+            
+            # Prioritas 3: CPU (fallback)
+            print("⚠ Menggunakan CPU (tidak ada GPU tersedia)")
+            return torch.device("cpu")
+            
+        except Exception as e:
+            print(f"✗ Error saat deteksi device: {e}")
+            print("⚠ Fallback ke CPU")
+            return torch.device("cpu")
 
     def train_step(self, engine, batch):
         self.model.train()
         inputs, targets = batch
-        # print(inputs.shape)
+        
         self.optimizer.zero_grad()
-        device = next(self.model.parameters()).device
-
-        outputs = self.model(inputs.to(device))
-        loss = self.criterion(outputs, targets.to(device))
+        
+        # Gunakan self.device
+        outputs = self.model(inputs.to(self.device))
+        loss = self.criterion(outputs, targets.to(self.device))
         loss.backward()
         self.optimizer.step()
         return loss.item()
@@ -177,11 +221,9 @@ class Trainer:
             self.model,
             metrics={
                 "accuracy": Accuracy(output_transform=self.threshold_output),
-                "loss": Loss(
-                    self.criterion,
-                ),
+                "loss": Loss(self.criterion),
             },
-            device=device,
+            device=self.device,  # ← Gunakan self.device
         )
         self.output = output
         if self.output is None:
@@ -190,10 +232,8 @@ class Trainer:
         self.best_checkpointer = ModelCheckpoint(
             filename_prefix=f"best-{self.model.__class__.__name__}-{int(time.time())}",
             dirname=self.output,
-            n_saved=1,  # simpan 1 best
-            score_function=lambda engine: -engine.state.metrics[
-                "loss"
-            ],  # kalau loss turun dianggap lebih baik
+            n_saved=1,
+            score_function=lambda engine: -engine.state.metrics["loss"],
             score_name="val_loss",
             create_dir=True,
             require_empty=False,
@@ -202,9 +242,9 @@ class Trainer:
         if weight is not None:
             best_checkpoints = torch.load(
                 weight, map_location="cpu"
-            )  # atau device lain
+            )
             self.model.load_state_dict(best_checkpoints["model"])
-            self.model = self.model.to(device=device)
+            self.model = self.model.to(self.device)
             if "optimizer_state" in best_checkpoints:
                 self.optimizer.load_state_dict(best_checkpoints["optimizer_state"])
             if "scheduler_state" in best_checkpoints:
