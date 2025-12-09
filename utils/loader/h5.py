@@ -10,12 +10,12 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         length,
         df,
         hdf5_path,
-        stride,
         count,
+        stride=500,
         offset_pos=0,
         x_margin=200,
         normalize=True,
-        noise_level=0.01,
+        noise_level=0.4,
         windows=None,
         use_balancing:bool = False
     ):

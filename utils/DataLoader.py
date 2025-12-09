@@ -18,7 +18,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         stride,
         count,
         offset_pos,
-        x_margin=100,
+        x_margin=400,
         normalize=True,
         noise_level=0.01,
     ):
@@ -184,14 +184,14 @@ class DataLoader:
 
         # TODO: add chunk system saat pakai hdf5
         elif self.source == "hdf5":
-            df_ = self.df_test if is_test else self.df_train            
+            df_ = self.df_test if is_test else self.df_train
             if count is None:
                 count = len(df_)
             return EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(
-                length,
-                df_,
-                self.hdf5,
-                stride,
-                count,
-                offset_pos,
+                length=length,
+                df=df_,
+                hdf5_path=self.hdf5,
+                count=count,
+                stride=stride,
+                offset_pos=offset_pos,
             )

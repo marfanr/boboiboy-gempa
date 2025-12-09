@@ -39,13 +39,13 @@ def main():
     parser.add_argument("--writer", type=str)
     parser.add_argument("--count", type=int)
     parser.add_argument("--test_count", type=int)
-    parser.add_argument("--stride", type=int, default=100)
+    parser.add_argument("--stride", type=int, default=500)
     parser.add_argument("--pos", type=int, default=0)
     parser.add_argument("--test_pos", type=int, default=0)
     parser.add_argument("--dist", type=bool, default=False)
     parser.add_argument("--log", type=str)
     parser.add_argument("--cfg", type=str)
-    parser.add_argument("--noice", type=float, default=0.01)
+    parser.add_argument("--noice", type=float, default=0.3)
     parser.add_argument("--normalize", type=bool, default=True)
 
     # TODO: to be implemented
@@ -100,22 +100,22 @@ def main():
     if args.hdf5 is not None and args.csv is not None:
         train_dataLoader = DataLoader(
             train_ds, 
-            batch_size=32, 
+            batch_size=args.batch, 
             shuffle=True,
-            num_workers=4,              # ← PENTING: parallel loading
-            pin_memory=True,            # ← PENTING: untuk CUDA
-            persistent_workers=True,    # ← workers tidak di-restart tiap epoch
-            prefetch_factor=2           # ← pre-load 2 batch ke depan
+            # num_workers=4,              # ← PENTING: parallel loading
+            # pin_memory=True,            # ← PENTING: untuk CUDA
+            # persistent_workers=True,    # ← workers tidak di-restart tiap epoch
+            # prefetch_factor=2           # ← pre-load 2 batch ke depan
         )
 
         test_dataLoader = DataLoader(
             test_ds, 
-            batch_size=32, 
+            batch_size=args.batch, 
             shuffle=False,
-            num_workers=4,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=2
+            # num_workers=4,
+            # pin_memory=True,
+            # persistent_workers=True,
+            # prefetch_factor=2
         )
 
     else:

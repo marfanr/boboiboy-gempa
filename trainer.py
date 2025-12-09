@@ -15,7 +15,7 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 from utils.Writer import TensorWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+import torch._dynamo
 
 try:
     # 1. Prioritas Pertama: Cek CUDA (NVIDIA GPU)
@@ -44,7 +44,7 @@ except Exception as e:
 
 
 class BCEWithLogitsDML(torch.nn.Module):
-    def __init__(self, reduction='mean'):
+    def __init__(self, reduction="mean"):
         super().__init__()
         self.reduction = reduction
 
@@ -52,9 +52,9 @@ class BCEWithLogitsDML(torch.nn.Module):
         max_val = torch.clamp(logits, min=0)
         loss = max_val - logits * targets + torch.log1p(torch.exp(-torch.abs(logits)))
 
-        if self.reduction == 'sum':
+        if self.reduction == "sum":
             return loss.sum()
-        elif self.reduction == 'none':
+        elif self.reduction == "none":
             return loss
         return loss.mean()
 
@@ -73,23 +73,34 @@ class Trainer:
         print(f"iterasi_per_epoch {len(train)} , {len(test)}")
         self.train_dl = train
         self.test_dl = test
-        
+
         # Set device dengan prioritas: parameter -> CUDA -> DirectML -> CPU
         if device is None:
             self.device = self._get_best_device()
         else:
             self.device = device
-        
+
         print(f"Training akan menggunakan device: {self.device}")
-        
+
         # Move model to device
         self.model = model.to(self.device)
-        
+
+        if not self.is_directml_device(self.device):
+            print(f"compiling model ...")
+            self.model = torch.compile(self.model, mode="default")
+
+            print(f"compiling model done")
+
         # Setup optimizer
         self.optimizer = optimizer
         if self.optimizer is None:
             self.optimizer = torch.optim.SGD(
-                self.model.parameters(), lr=0.0001, foreach=False, momentum=1e-4, 
+                self.model.parameters(),
+                lr=0.01,
+                foreach=False if self.is_directml_device(self.device) else True,
+                momentum=0.9,
+                nesterov=True,
+                weight_decay=1e-4,
             )
 
         self.scheduler = ReduceLROnPlateau(
@@ -97,16 +108,23 @@ class Trainer:
         )
 
         self.logger = logger
-        
+
         # Setup criterion
         self.criterion = criterion
         if self.criterion is None:
             # Gunakan custom BCEWithLogitsDML jika menggunakan DirectML
-            if "privateuseone" in str(self.device):  # DirectML menggunakan privateuseone
+            if "privateuseone" in str(
+                self.device
+            ):  # DirectML menggunakan privateuseone
                 self.criterion = BCEWithLogitsDML().to(self.device)
                 print("Menggunakan BCEWithLogitsDML untuk DirectML")
             else:
                 self.criterion = nn.BCEWithLogitsLoss()
+
+    def is_directml_device(self, device):
+        """Cek apakah device adalah DirectML"""
+        device_str = str(device)
+        return "privateuseone" in device_str or "dml" in device_str.lower()
 
     def _get_best_device(self):
         """
@@ -122,10 +140,11 @@ class Trainer:
                 print(f"✓ CUDA tersedia: {torch.cuda.get_device_name(0)}")
                 print(f"  - CUDA device count: {torch.cuda.device_count()}")
                 return device
-            
+
             # Prioritas 2: DirectML
             try:
                 import torch_directml
+
                 device = torch_directml.device()
                 print(f"✓ DirectML tersedia: {device}")
                 return device
@@ -133,22 +152,22 @@ class Trainer:
                 print("✗ DirectML tidak terinstall")
             except Exception as e:
                 print(f"✗ DirectML error: {e}")
-            
+
             # Prioritas 3: CPU (fallback)
-            print("⚠ Menggunakan CPU (tidak ada GPU tersedia)")
+            print("❗Menggunakan CPU (tidak ada GPU tersedia)")
             return torch.device("cpu")
-            
+
         except Exception as e:
-            print(f"✗ Error saat deteksi device: {e}")
-            print("⚠ Fallback ke CPU")
+            print(f"❗ Error saat deteksi device: {e}")
+            print("❗ Fallback ke CPU")
             return torch.device("cpu")
 
     def train_step(self, engine, batch):
         self.model.train()
         inputs, targets = batch
-        
+
         self.optimizer.zero_grad(set_to_none=True)
-        
+
         # Gunakan self.device
         outputs = self.model(inputs.to(self.device))
         loss = self.criterion(outputs, targets.to(self.device))
@@ -240,9 +259,7 @@ class Trainer:
         )
 
         if weight is not None:
-            best_checkpoints = torch.load(
-                weight, map_location="cpu"
-            )
+            best_checkpoints = torch.load(weight, map_location="cpu")
             self.model.load_state_dict(best_checkpoints["model"])
             self.model = self.model.to(self.device)
             if "optimizer_state" in best_checkpoints:
