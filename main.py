@@ -129,7 +129,7 @@ def main():
         trainer = Trainer(train_dataLoader, test_dataLoader, model, logger=logger)
         if args.hdf5 is not None:
             print("using hdf5")
-            
+
         trainer.train(
             max_epoch=args.max_epoch,
             weight=args.weight,

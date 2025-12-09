@@ -5,13 +5,15 @@ from .register import register_layer
 
 @register_layer("convolutional")
 class ConvolutionLayer(LayerBuilder):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
-        super(ConvolutionLayer, self).__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
+    def __init__(self, block):
+        super().__init__(block)
+
+        self.in_channels = int(block.get("in_channels", 1))
+        self.out_channels = int(block.get("filters", 1))
+        self.kernel_size = int(block.get("size", 1))
+        self.stride = int(block.get("stride", 1))
+        self.padding = int(block.get("pad", 0))
+
 
     def build(self):
         return nn.Conv1d(
