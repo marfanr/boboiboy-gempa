@@ -147,7 +147,7 @@ class Trainer:
         self.model.train()
         inputs, targets = batch
         
-        self.optimizer.zero_grad()
+        self.optimizer.zero_grad(set_to_none=True)
         
         # Gunakan self.device
         outputs = self.model(inputs.to(self.device))

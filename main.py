@@ -98,7 +98,7 @@ def main():
     )
 
     if args.hdf5 is not None and args.csv is not None:
-        train_loader = DataLoader(
+        train_dataLoader = DataLoader(
             train_ds, 
             batch_size=32, 
             shuffle=True,
@@ -108,7 +108,7 @@ def main():
             prefetch_factor=2           # ← pre-load 2 batch ke depan
         )
 
-        test_loader = DataLoader(
+        test_dataLoader = DataLoader(
             test_ds, 
             batch_size=32, 
             shuffle=False,
