@@ -98,15 +98,24 @@ def main():
     )
 
     if args.hdf5 is not None and args.csv is not None:
-        train_dataLoader = DataLoader(
-            train_ds,
-            int(args.batch),
-            False,
+        train_loader = DataLoader(
+            train_ds, 
+            batch_size=32, 
+            shuffle=True,
+            num_workers=4,              # ← PENTING: parallel loading
+            pin_memory=True,            # ← PENTING: untuk CUDA
+            persistent_workers=True,    # ← workers tidak di-restart tiap epoch
+            prefetch_factor=2           # ← pre-load 2 batch ke depan
         )
-        test_dataLoader = DataLoader(
-            test_ds,
-            int(args.batch),
-            False,
+
+        test_loader = DataLoader(
+            test_ds, 
+            batch_size=32, 
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2
         )
 
     else:
