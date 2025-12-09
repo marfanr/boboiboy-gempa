@@ -43,6 +43,22 @@ except Exception as e:
     print("Menggunakan Device: cpu")
 
 
+class BCEWithLogitsDML(torch.nn.Module):
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, logits, targets):
+        max_val = torch.clamp(logits, min=0)
+        loss = max_val - logits * targets + torch.log1p(torch.exp(-torch.abs(logits)))
+
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'none':
+            return loss
+        return loss.mean()
+
+
 class Trainer:
     def __init__(
         self,
@@ -68,8 +84,8 @@ class Trainer:
 
         self.optimizer = optimizer
         if self.optimizer is None:
-            self.optimizer = optimizer = torch.optim.Adam(
-                model.parameters(), lr=0.0001, foreach=False, weight_decay=1e-6
+            self.optimizer = optimizer = torch.optim.SGD(
+                model.parameters(), lr=0.0001, foreach=False, momentum=1e-4, 
             )
 
         self.scheduler = ReduceLROnPlateau(
@@ -81,6 +97,7 @@ class Trainer:
         self.criterion = criterion
         if self.criterion is None:
             self.criterion = nn.BCEWithLogitsLoss()
+            # self.criterion = BCEWithLogitsDML().to(device=device)
 
     def train_step(self, engine, batch):
         self.model.train()
