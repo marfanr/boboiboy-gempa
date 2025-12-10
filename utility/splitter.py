@@ -5,7 +5,7 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from sklearn.model_selection import train_test_split
 
-class DataSplitter():
+class DataSplitter:
     def __init__(self, hdf5, csv, out):
         self.csv = csv
         self.hdf5_path = hdf5
