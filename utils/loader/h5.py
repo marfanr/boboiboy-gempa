@@ -279,14 +279,6 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         balanced_windows = [balanced_windows[i] for i in indices]
         balanced_labels = [balanced_labels[i] for i in indices]
 
-        print("\n" + "=" * 50)
-        print("HASIL SETELAH BALANCING:")
-        print(f"Total windows: {len(balanced_windows):,}")
-        print(f"  P_and_S: {balanced_labels.count(0):,}")
-        print(f"  P_only: {balanced_labels.count(1):,}")
-        print(f"  S_only: {balanced_labels.count(2):,}")
-        print(f"  no_P_no_S: {balanced_labels.count(3):,}")
-        print("=" * 50)
 
         self.windows = balanced_windows
         #
