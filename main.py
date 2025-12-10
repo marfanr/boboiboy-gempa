@@ -48,6 +48,9 @@ def main():
     parser.add_argument("--noice", type=float, default=0.3)
     parser.add_argument("--normalize", type=bool, default=True)
 
+    parser.add_argument("--compile", type=bool, default=True)
+    parser.add_argument("--note", type=str, default="")
+
     # TODO: to be implemented
     parser.add_argument("--gpu_parallel", type=bool, default=False)
 
@@ -87,7 +90,7 @@ def main():
 
     logger = None
     if args.log is not None:
-        logger = TensorWriter(model.__class__.__name__, args.log)
+        logger = TensorWriter(model.__class__.__name__, args.log, args.note)
 
     #  create data loader from data
     data_loader = InternalDataLoader(args=args)

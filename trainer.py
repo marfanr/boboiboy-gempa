@@ -83,7 +83,7 @@ class Trainer:
         print(f"Training akan menggunakan device: {self.device}")
 
         # Move model to device
-        self.model = model.to(self.device)
+        self.model : nn.Module = model.to(self.device)
 
         if not self.is_directml_device(self.device):
             print(f"compiling model ...")
@@ -259,7 +259,7 @@ class Trainer:
         )
 
         if weight is not None:
-            best_checkpoints = torch.load(weight, map_location="cpu")
+            best_checkpoints = torch.load(weight, map_location="cpu", mmap=True)
             self.model.load_state_dict(best_checkpoints["model"])
             self.model = self.model.to(self.device)
             if "optimizer_state" in best_checkpoints:
