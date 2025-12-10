@@ -1,12 +1,12 @@
 from model.loader import ModelLoader
 import argparse
 from trainer import Trainer
-from utils.DataLoader import DataLoader as InternalDataLoader
+from utility.DataLoader import DataLoader as InternalDataLoader
 from torch.utils.data import DataLoader
 from torchinfo import summary
-from utils.Writer import TensorWriter
+from utility.Writer import TensorWriter
 from model.parser import ConfigParser
-from utils.splitter import DataSplitter
+from utility.splitter import DataSplitter
 
 supported_mode = ["train", "test", "ls", "debug", "split", "info"]
 

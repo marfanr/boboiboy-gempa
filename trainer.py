@@ -13,7 +13,7 @@ from ignite.handlers import ModelCheckpoint
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 import torch.distributed as dist
-from utils.Writer import TensorWriter
+from utility.Writer import TensorWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch._dynamo
 
