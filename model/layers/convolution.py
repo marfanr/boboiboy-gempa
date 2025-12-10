@@ -13,13 +13,21 @@ class ConvolutionLayer(LayerBuilder):
         self.kernel_size = int(block.get("size", 1))
         self.stride = int(block.get("stride", 1))
         self.padding = int(block.get("pad", 0))
-
+        self.batch_norm = int(block.get("batch_normalize", 0))
 
     def build(self):
-        return nn.Conv1d(
-            in_channels=self.in_channels,
-            out_channels=self.out_channels,
-            kernel_size=self.kernel_size,
-            stride=self.stride,
-            padding=self.padding,
+        layers = []
+        layers.append(
+            nn.Conv1d(
+                in_channels=self.in_channels,
+                out_channels=self.out_channels,
+                kernel_size=self.kernel_size,
+                stride=self.stride,
+                padding=self.padding,
+            )
         )
+        
+        if self.batch_norm:
+            layers.append(nn.BatchNorm1d(self.out_channels))
+
+        return nn.Sequential(*layers)

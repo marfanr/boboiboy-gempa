@@ -1,10 +1,17 @@
 from .layers.register import LAYER_REGISTRY
+from torch import nn
 
+class NetBuilder(nn.Module):
+    def __init__(self):
+        pass
 
 class ConfigParser:
     def __init__(self, cfg: str):
         self.file = cfg
         self.builded_layers = []
+        self.routed_map = []
+        self.module_list = []
+
 
         print("Registered layers:")
         for i in LAYER_REGISTRY:
@@ -41,7 +48,6 @@ class ConfigParser:
             l,
             i,
         ) in zip(layers, range(len(layers))):
-            last_parent = i - 1 if i > 0 else None
 
             type = l["type"]
             print(f"Parsing layer of type: {type}")
@@ -57,9 +63,7 @@ class ConfigParser:
                     i + int(x) if int(x) < 0 else int(x) for x in layers_idxs.split(",")
                 ]
                 continue
-
-            print(f"last_parent :  {last_parent}")
-
+            
             if type not in LAYER_REGISTRY:
                 raise ValueError(f"Layer type {type} not registered")
 
