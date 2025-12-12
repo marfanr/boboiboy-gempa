@@ -43,20 +43,69 @@ except Exception as e:
     print("Menggunakan Device: cpu")
 
 
-class BCEWithLogitsDML(torch.nn.Module):
-    def __init__(self, reduction="mean"):
-        super().__init__()
+class BCEWithLogitsLoss(nn.Module):
+    """
+    Binary Cross Entropy with Logits Loss yang ramah untuk DirectML.
+
+    Menghindari operasi in-place dan menggunakan operasi yang stabil
+    untuk kompatibilitas dengan DML backend.
+
+    Args:
+        weight (Tensor, optional): Weight manual untuk setiap batch element
+        reduction (str): 'none' | 'mean' | 'sum'. Default: 'mean'
+        pos_weight (Tensor, optional): Weight untuk positive examples
+    """
+
+    def __init__(self, weight=None, reduction='mean', pos_weight=None):
+        super(BCEWithLogitsLoss, self).__init__()
+        self.register_buffer('weight', weight)
+        self.register_buffer('pos_weight', pos_weight)
         self.reduction = reduction
 
-    def forward(self, logits, targets):
-        max_val = torch.clamp(logits, min=0)
-        loss = max_val - logits * targets + torch.log1p(torch.exp(-torch.abs(logits)))
+    def forward(self, input, target):
+        """
+        Args:
+            input: Logits dari model (sebelum sigmoid), shape (N, *)
+            target: Ground truth labels (0 atau 1), shape (N, *)
 
-        if self.reduction == "sum":
-            return loss.sum()
-        elif self.reduction == "none":
+        Returns:
+            loss: Scalar jika reduction='mean'/'sum', tensor jika 'none'
+        """
+        # Validasi input
+        assert input.shape == target.shape, \
+            f"Input shape {input.shape} harus sama dengan target shape {target.shape}"
+
+        # Hitung max untuk numerical stability
+        # Gunakan clamp untuk menghindari overflow di DML
+        max_val = torch.clamp(input, min=0)
+
+        # Formula BCE with logits yang stabil:
+        # loss = max(x, 0) - x * z + log(1 + exp(-abs(x)))
+        # dimana x = input, z = target
+
+        # Hindari in-place operations untuk DML
+        loss = max_val - input * target + torch.log1p(torch.exp(-torch.abs(input)))
+
+        # Terapkan pos_weight jika ada
+        if self.pos_weight is not None:
+            # pos_weight diterapkan pada positive examples
+            log_weight = torch.ones_like(input)
+            log_weight = log_weight + (self.pos_weight - 1) * target
+            loss = loss * log_weight
+
+        # Terapkan weight jika ada
+        if self.weight is not None:
+            loss = loss * self.weight
+
+        # Reduction
+        if self.reduction == 'none':
             return loss
-        return loss.mean()
+        elif self.reduction == 'mean':
+            return torch.mean(loss)
+        elif self.reduction == 'sum':
+            return torch.sum(loss)
+        else:
+            raise ValueError(f"Reduction tidak valid: {self.reduction}")
 
 
 class Trainer:
@@ -83,7 +132,7 @@ class Trainer:
         print(f"Training akan menggunakan device: {self.device}")
 
         # Move model to device
-        self.model : nn.Module = model.to(self.device)
+        self.model: nn.Module = model.to(self.device)
 
         if not self.is_directml_device(self.device):
             print(f"compiling model ...")
@@ -94,12 +143,10 @@ class Trainer:
         # Setup optimizer
         self.optimizer = optimizer
         if self.optimizer is None:
-            self.optimizer = torch.optim.SGD(
+            self.optimizer = torch.optim.AdamW(
                 self.model.parameters(),
-                lr=0.01,
+                lr=1e-4,
                 foreach=False if self.is_directml_device(self.device) else True,
-                momentum=0.9,
-                nesterov=True,
                 weight_decay=1e-4,
             )
 
@@ -110,16 +157,16 @@ class Trainer:
         self.logger = logger
 
         # Setup criterion
-        self.criterion = criterion
-        if self.criterion is None:
-            # Gunakan custom BCEWithLogitsDML jika menggunakan DirectML
-            if "privateuseone" in str(
-                self.device
-            ):  # DirectML menggunakan privateuseone
-                self.criterion = BCEWithLogitsDML().to(self.device)
-                print("Menggunakan BCEWithLogitsDML untuk DirectML")
-            else:
-                self.criterion = nn.BCEWithLogitsLoss()
+        # self.criterion = criterion
+        # if self.criterion is None:
+        #     # Gunakan custom BCEWithLogitsDML jika menggunakan DirectML
+        #     if "privateuseone" in str(
+        #         self.device
+        #     ):  # DirectML menggunakan privateuseone
+        self.criterion = BCEWithLogitsLoss().to(self.device)
+        #         print("Menggunakan BCEWithLogitsDML untuk DirectML")
+        #     else:
+        # self.criterion = nn.BCEWithLogitsLoss()
 
     def is_directml_device(self, device):
         """Cek apakah device adalah DirectML"""
@@ -171,6 +218,8 @@ class Trainer:
         # Gunakan self.device
         outputs = self.model(inputs.to(self.device))
         loss = self.criterion(outputs, targets.to(self.device))
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(f"Batch loss invalid")
         loss.backward()
         self.optimizer.step()
         return loss.item()
@@ -247,6 +296,7 @@ class Trainer:
         self.output = output
         if self.output is None:
             self.output = "checkpoints"
+        print(f"output : {self.output}")
 
         self.best_checkpointer = ModelCheckpoint(
             filename_prefix=f"best-{self.model.__class__.__name__}-{int(time.time())}",

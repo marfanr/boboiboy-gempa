@@ -2,7 +2,7 @@ from model.loader import ModelLoader
 import argparse
 from trainer import Trainer
 from utility.DataLoader import DataLoader as InternalDataLoader
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchinfo import summary
 from utility.Writer import TensorWriter
 from model.parser import ConfigParser
@@ -14,42 +14,48 @@ supported_mode = ["train", "test", "ls", "debug", "split", "info"]
 def main():
     parser = argparse.ArgumentParser(description="Gempa")
 
-    parser.add_argument("mode", help="train|test|ls", type=str)
+    subparser = parser.add_subparsers(
+        dest="mode", required=True, help="train/test/ls/debug/split/info"
+    )
 
     # data sorces
-    parser.add_argument("--hdf5", help="hdf5 file", type=str)
-    parser.add_argument("--csv", help="csv file", type=str)
-    parser.add_argument("--x_test", help="np file", type=str)
-    parser.add_argument("--x_train", help="np file", type=str)
-    parser.add_argument("--y_test", help="np file", type=str)
-    parser.add_argument("--y_train", help="np file", type=str)
-    parser.add_argument("--meta_test", help="np file", type=str)
-    parser.add_argument("--meta_train", help="np file", type=str)
-    parser.add_argument("--train_npz", help="np file", type=str)
-    parser.add_argument("--test_npz", help="np file", type=str)
 
     # model
     parser.add_argument("--model", type=str)
 
     # training options
-    parser.add_argument("--batch", type=int, default=32)
-    parser.add_argument("--max_epoch", type=float, default=15)
-    parser.add_argument("--weight", type=str)
-    parser.add_argument("--out", type=str)
-    parser.add_argument("--writer", type=str)
-    parser.add_argument("--count", type=int)
-    parser.add_argument("--test_count", type=int)
-    parser.add_argument("--stride", type=int, default=500)
-    parser.add_argument("--pos", type=int, default=0)
-    parser.add_argument("--test_pos", type=int, default=0)
-    parser.add_argument("--dist", type=bool, default=False)
-    parser.add_argument("--log", type=str)
-    parser.add_argument("--cfg", type=str)
-    parser.add_argument("--noice", type=float, default=0.3)
-    parser.add_argument("--normalize", type=bool, default=True)
+    train_parser = subparser.add_parser("train", help="train model")
+    train_parser.add_argument("--model", type=str)
+    train_parser.add_argument("--hdf5", help="hdf5 file", type=str)
+    train_parser.add_argument("--csv", help="csv file", type=str)
+    train_parser.add_argument("--x_test", help="np file", type=str)
+    train_parser.add_argument("--x_train", help="np file", type=str)
+    train_parser.add_argument("--y_test", help="np file", type=str)
+    train_parser.add_argument("--y_train", help="np file", type=str)
+    train_parser.add_argument("--meta_test", help="np file", type=str)
+    train_parser.add_argument("--meta_train", help="np file", type=str)
+    train_parser.add_argument("--train_npz", help="np file", type=str)
+    train_parser.add_argument("--test_npz", help="np file", type=str)
+    train_parser.add_argument("--batch", type=int, default=32)
+    train_parser.add_argument("--max_epoch", type=float, default=15)
+    train_parser.add_argument("--weight", type=str)
+    train_parser.add_argument("--stride", type=int, default=500)
+    train_parser.add_argument("--out", type=str)
+    train_parser.add_argument("--writer", type=str)
+    train_parser.add_argument("--count", type=int)
+    train_parser.add_argument("--test_count", type=int)
+    train_parser.add_argument("--pos", type=int, default=0)
+    train_parser.add_argument("--test_pos", type=int, default=0)
+    train_parser.add_argument("--dist", type=bool, default=False)
+    train_parser.add_argument("--log", type=str)
+    train_parser.add_argument("--noice", type=float, default=0.3)
+    train_parser.add_argument("--normalize", type=bool, default=True)
+
+    debug_parser = subparser.add_parser("debug", help="debug model")
+    debug_parser.add_argument("--cfg", type=str)
 
     parser.add_argument("--compile", type=bool, default=True)
-    parser.add_argument("--note", type=str, default="")
+    train_parser.add_argument("--note", type=str, default="")
 
     # TODO: to be implemented
     parser.add_argument("--gpu_parallel", type=bool, default=False)
@@ -95,15 +101,17 @@ def main():
     #  create data loader from data
     data_loader = InternalDataLoader(args=args)
 
-    train_ds = data_loader.getDataset(1000, args.stride, args.count, args.pos, False)
+    train_ds = data_loader.getDataset(6000, args.stride, args.count, args.pos, False)
     test_ds = data_loader.getDataset(
-        1000, args.stride, args.test_count, args.test_pos, True
+        6000, args.stride, args.test_count, args.test_pos, True
     )
+
+    # train_ds.lab
 
     if args.hdf5 is not None and args.csv is not None:
         train_dataLoader = DataLoader(
-            train_ds, 
-            batch_size=args.batch, 
+            train_ds,
+            batch_size=args.batch,
             shuffle=True,
             # num_workers=4,              # ← PENTING: parallel loading
             # pin_memory=True,            # ← PENTING: untuk CUDA
@@ -112,8 +120,8 @@ def main():
         )
 
         test_dataLoader = DataLoader(
-            test_ds, 
-            batch_size=args.batch, 
+            test_ds,
+            batch_size=args.batch,
             shuffle=False,
             # num_workers=4,
             # pin_memory=True,

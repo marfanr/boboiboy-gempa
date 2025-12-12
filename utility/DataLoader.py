@@ -4,8 +4,12 @@ import torch
 import h5py
 import numpy as np
 import pandas as pd
-from .loader.h5 import EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset
+from .loader.h5 import EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset, NewHDF5FullDataset
 from sklearn.model_selection import train_test_split
+
+"""
+BROKEN
+"""
 
 
 class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
@@ -70,6 +74,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
     def _get_single(self, idx: int):
         sample_idx, x_start = self.windows[idx]
         x_end = x_start + self.data_length
+        print(sample_idx)
 
         # window data
         x_window = torch.from_numpy(self.x[sample_idx, x_start:x_end]).float().T
@@ -185,13 +190,18 @@ class DataLoader:
         # TODO: add chunk system saat pakai hdf5
         elif self.source == "hdf5":
             df_ = self.df_test if is_test else self.df_train
+            print("using HDF5 ", df_.shape)
             if count is None:
                 count = len(df_)
-            return EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(
-                length=length,
+            return NewHDF5FullDataset(
                 df=df_,
                 hdf5_path=self.hdf5,
-                count=count,
-                stride=stride,
-                offset_pos=offset_pos,
             )
+            # return EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(
+            #     length=length,
+            #     df=df_,
+            #     hdf5_path=self.hdf5,
+            #     count=count,
+            #     stride=stride,
+            #     offset_pos=offset_pos,
+            # )

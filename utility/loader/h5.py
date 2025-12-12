@@ -2,22 +2,27 @@ import torch
 from torch.utils.data import Dataset
 import h5py
 import numpy as np
+import pandas as pd
+
+"""
+BROKEN
+"""
 
 
 class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
     def __init__(
-            self,
-            length,
-            df,
-            hdf5_path,
-            count,
-            stride=500,
-            offset_pos=0,
-            x_margin=200,
-            normalize=True,
-            noise_level=0.4,
-            windows=None,
-            use_balancing: bool = True
+        self,
+        length,
+        df,
+        hdf5_path,
+        count,
+        stride=1,
+        offset_pos=0,
+        x_margin=0,
+        normalize=False,
+        noise_level=0.4,
+        windows=None,
+        use_balancing: bool = False,
     ):
         self.data_length = length
         self.df = df
@@ -31,10 +36,10 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         self.use_balancing = use_balancing
 
         self.balancing_rules = {
-            "min": 0.7,  # kelas paling kecil
+            "min": 0.8,  # kelas paling kecil
             "2nd_min": 0.8,  # kelas kedua paling kecil
-            "middle": 0.75,  # semua kelas di tengah
-            "max": 0.7  # kelas terbesar (undersample)
+            "middle": 0.8,  # semua kelas di tengah
+            "max": 0.8,  # kelas terbesar (undersample)
         }
 
         self.h5 = None  # handle kosong
@@ -75,17 +80,23 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         # ---------------------------
         # 2. Window valid jika masuk margin P atau S
         # ---------------------------
-        P_valid = (window_starts[None, :] < P_right[:, None]) & \
-                  (window_ends[None, :] > P_left[:, None])
+        P_valid = (window_starts[None, :] < P_right[:, None]) & (
+            window_ends[None, :] > P_left[:, None]
+        )
 
-        S_valid = (window_starts[None, :] < S_right[:, None]) & \
-                  (window_ends[None, :] > S_left[:, None])
+        S_valid = (window_starts[None, :] < S_right[:, None]) & (
+            window_ends[None, :] > S_left[:, None]
+        )
 
         # ---------------------------
         # 3. Window yang benar-benar mengandung arrival (lebih ketat)
         # ---------------------------
-        P_in = (P[:, None] >= window_starts[None, :]) & (P[:, None] < window_ends[None, :])
-        S_in = (S[:, None] >= window_starts[None, :]) & (S[:, None] < window_ends[None, :])
+        P_in = (P[:, None] >= window_starts[None, :]) & (
+            P[:, None] < window_ends[None, :]
+        )
+        S_in = (S[:, None] >= window_starts[None, :]) & (
+            S[:, None] < window_ends[None, :]
+        )
 
         P_eff = P_valid & P_in
         S_eff = S_valid & S_in
@@ -123,10 +134,17 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         }
 
         windows = np.array(
-                self.windows_p_and_s +
-                self.windows_p_only +
-                self.windows_s_only +
-                self.windows_no_p_no_s
+            self.windows_p_and_s
+            + self.windows_p_only
+            + self.windows_s_only
+            + self.windows_no_p_no_s
+        )
+
+        self.labels = np.array(
+            [0] * len(self.windows_p_and_s)
+            + [1] * len(self.windows_p_only)
+            + [2] * len(self.windows_s_only)
+            + [3] * len(self.windows_no_p_no_s)
         )
 
         # 4. Shuffle agar tidak berurutan per kategori
@@ -145,6 +163,7 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
     def _get_single(self, idx):
         sample_idx, x_start = self.windows[idx]
         curr_df = self.df.iloc[sample_idx]
+        print(sample_idx)
 
         data = self.h5["data/" + curr_df.trace_name]
         x_end = x_start + self.data_length
@@ -167,19 +186,19 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         b = min(self.data_length, S_in_window + margin)
 
         if a < b:
-            label[int(a): int(b)] = 1.0
+            label[int(a) : int(b)] = 1.0
 
         return x_window, label.unsqueeze(0)
 
     def _normalize(self, wave):
-        mean = wave.mean(dim=1, keepdim=True)
-        std = wave.std(dim=1, keepdim=True) + 1e-6
-        return (wave - mean) / std
+        rms = torch.sqrt(torch.mean(wave**2, dim=1, keepdim=True) + 1e-4)
+        wave = wave / rms
+        return wave
 
     def __augmentation__(self, x_window):
         if np.random.random() > 0.5:
             noise = (
-                    torch.randn_like(x_window, device=x_window.device) * self.noise_level
+                torch.randn_like(x_window, device=x_window.device) * self.noise_level
             )
             x_window += noise
         return x_window
@@ -199,7 +218,9 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
             if n_extra > 0:
                 extra = list(np.random.choice(len(samples), n_extra, replace=False))
                 result.extend([samples[i] for i in extra])
-            print(f"  {class_name}: {n_samples:,} -> {target:,} (oversampled x{target / n_samples:.2f})")
+            print(
+                f"  {class_name}: {n_samples:,} -> {target:,} (oversampled x{target / n_samples:.2f})"
+            )
         else:
             result = samples
             print(f"  {class_name}: {n_samples} (unchanged)")
@@ -249,16 +270,21 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         print("Distribusi setelah balancing:\n")
 
         print("\nBalancing process:")
-        balanced_p_and_s = self.__balance_samples(self.windows_p_and_s, targets["P_and_S"], "P_and_S")
-        balanced_p_only = self.__balance_samples(self.windows_p_only, targets["P_only"], "P_only")
-        balanced_s_only = self.__balance_samples(self.windows_s_only, targets["S_only"], "S_only")
-        balanced_no_p_no_s = self.__balance_samples(self.windows_no_p_no_s, targets["no_P_no_S"], "no_P_no_S")
+        balanced_p_and_s = self.__balance_samples(
+            self.windows_p_and_s, targets["P_and_S"], "P_and_S"
+        )
+        balanced_p_only = self.__balance_samples(
+            self.windows_p_only, targets["P_only"], "P_only"
+        )
+        balanced_s_only = self.__balance_samples(
+            self.windows_s_only, targets["S_only"], "S_only"
+        )
+        balanced_no_p_no_s = self.__balance_samples(
+            self.windows_no_p_no_s, targets["no_P_no_S"], "no_P_no_S"
+        )
 
         balanced_windows = (
-                balanced_p_and_s +
-                balanced_p_only +
-                balanced_s_only +
-                balanced_no_p_no_s
+            balanced_p_and_s + balanced_p_only + balanced_s_only + balanced_no_p_no_s
         )
 
         # 4. Shuffle agar tidak berurutan per kategori
@@ -267,10 +293,10 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         # 5. Buat label untuk setiap window
         # 0: P_and_S, 1: P_only, 2: S_only, 3: no_P_no_S
         balanced_labels = (
-                [0] * len(balanced_p_and_s) +
-                [1] * len(balanced_p_only) +
-                [2] * len(balanced_s_only) +
-                [3] * len(balanced_no_p_no_s)
+            [0] * len(balanced_p_and_s)
+            + [1] * len(balanced_p_only)
+            + [2] * len(balanced_s_only)
+            + [3] * len(balanced_no_p_no_s)
         )
 
         # Shuffle labels sesuai dengan shuffle windows
@@ -278,7 +304,6 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         np.random.shuffle(indices)
         balanced_windows = [balanced_windows[i] for i in indices]
         balanced_labels = [balanced_labels[i] for i in indices]
-
 
         self.windows = balanced_windows
         #
@@ -294,3 +319,50 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         # print(f"Total: {total:,} -> {new_total:,}")
         # print(f"Iterasi per epoch (batch=128): {int(new_total / 128):,}")
         # print(f"Balance ratio (min/max): {min(targets.values()) / max(targets.values()) * 100:.2f}%")
+
+
+class NewHDF5WindowDataset(Dataset):
+    def __init__(self, df: pd.DataFrame, hdf5_path: str):
+        super().__init__()
+
+
+class NewHDF5FullDataset(Dataset):
+    def __init__(self, df: pd.DataFrame, hdf5_path: str):
+        super().__init__()
+        self.hdf5_path = hdf5_path
+        self.df = df
+        self.hdf5_instance : h5py.File = None
+        self.noise_level = 0.4
+        self.__lazy_init()
+
+    def __lazy_init(self):
+        if self.hdf5_instance is None:
+            self.hdf5_instance = h5py.File(self.hdf5_path, "r", swmr=True, libver="latest")
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        current_df = self.df.iloc[idx]
+        wave = self.hdf5_instance["data/" + current_df.trace_name]
+        x_window = torch.from_numpy(wave[:]).float().T
+        if np.random.random() > 0.5:
+            noise = (
+                    torch.randn_like(x_window, device=x_window.device) * self.noise_level
+            )
+            x_window += noise
+        x_window = self._normalize(x_window)
+
+        P = int(wave.attrs["p_arrival_sample"])
+        S = int(wave.attrs["s_arrival_sample"])
+
+        label = torch.zeros(6000, dtype=torch.float32)
+        label[P:S] = 1.0
+
+        return x_window, label.unsqueeze(0)
+
+    def _normalize(self, wave):
+        rms = torch.sqrt(torch.mean(wave**2, dim=1, keepdim=True) + 1e-4)
+        wave = wave / rms
+        return wave
+
