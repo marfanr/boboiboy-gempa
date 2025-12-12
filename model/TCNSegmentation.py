@@ -63,7 +63,7 @@ class DecoderBlock(nn.Module):
 
 @ModelLoader.register("TCNSegmentation")
 class Models(nn.Module):
-    def __init__(self, levels=4):
+    def __init__(self, levels=6):
         super().__init__()
         self.__class__.__name__ = "TCNSegmentation"
 
@@ -107,3 +107,6 @@ class Models(nn.Module):
 
         x = self.head(x)
         return x[..., :orig_len]
+
+
+

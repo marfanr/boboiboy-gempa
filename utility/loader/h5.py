@@ -346,15 +346,37 @@ class NewHDF5FullDataset(Dataset):
         current_df = self.df.iloc[idx]
         wave = self.hdf5_instance["data/" + current_df.trace_name]
         x_window = torch.from_numpy(wave[:]).float().T
+
         if np.random.random() > 0.5:
-            noise = (
-                    torch.randn_like(x_window, device=x_window.device) * self.noise_level
-            )
+            # 1. Gaussian Noise
+            noise = torch.randn_like(x_window, device=x_window.device) * self.noise_level
             x_window += noise
+
+        if np.random.random() > 0.5:
+            # 2. Random amplitude scaling
+            scale = 0.8 + 0.4 * torch.rand(1, device=x_window.device)  # skala antara 0.8 - 1.2
+            x_window *= scale
+
+        if np.random.random() > 0.5:
+            # 3. Random time shift
+            shift = int(torch.randint(-5, 6, (1,)).item())  # geser ±5 sample
+            x_window = torch.roll(x_window, shifts=shift, dims=1)
+
+        if np.random.random() > 0.5:
+            # 4. Time masking (sebagian window diset 0)
+            t = x_window.shape[1]
+            mask_width = int(0.1 * t)  # mask 10% dari panjang
+            start = int(torch.randint(0, t - mask_width, (1,)).item())
+            x_window[:, start:start + mask_width] = 0
+
+        # Normalisasi setelah augmentasi
         x_window = self._normalize(x_window)
 
         P = int(wave.attrs["p_arrival_sample"])
         S = int(wave.attrs["s_arrival_sample"])
+
+        P = max(0, min(P, 6000))
+        S = max(0, min(S, 6000))
 
         label = torch.zeros(6000, dtype=torch.float32)
         label[P:S] = 1.0
@@ -362,7 +384,16 @@ class NewHDF5FullDataset(Dataset):
         return x_window, label.unsqueeze(0)
 
     def _normalize(self, wave):
-        rms = torch.sqrt(torch.mean(wave**2, dim=1, keepdim=True) + 1e-4)
-        wave = wave / rms
+        # Hitung mean dan std per batch (dim=1)
+        mean = torch.mean(wave, dim=1, keepdim=True)
+        std = torch.std(wave, dim=1, keepdim=True) + 1e-8  # tambahkan epsilon agar tidak divisi 0
+
+        # Normalisasi
+        wave = (wave - mean) / std
+
+        # Clamp output untuk mencegah nilai ekstrem jika perlu
+        wave = torch.clamp(wave, min=-10, max=10)
+
         return wave
+
 

@@ -15,97 +15,36 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 from utility.Writer import TensorWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-import torch._dynamo
-
-try:
-    # 1. Prioritas Pertama: Cek CUDA (NVIDIA GPU)
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        print("Device: cuda (NVIDIA)")
-
-    # 2. Prioritas Kedua: Cek DirectML (AMD/Intel/Windows)
-    else:
-        # Import di dalam blok ini agar tidak error jika user tidak punya library-nya
-        import torch_directml
-
-        device = torch_directml.device()
-        print(f"Device: {device} (DirectML)")
-
-except ImportError:
-    # Jika library torch_directml tidak terinstall dan CUDA tidak ada
-    device = torch.device("cpu")
-    print("DirectML tidak terinstall. Menggunakan CPU.")
-
-except Exception as e:
-    # Fallback terakhir ke CPU jika terjadi error lain
-    print(f"Tidak ada GPU CUDA atau DirectML yang terdeteksi ({e}).")
-    device = torch.device("cpu")
-    print("Menggunakan Device: cpu")
+import torch
+from torch.functional import F
 
 
-class BCEWithLogitsLoss(nn.Module):
-    """
-    Binary Cross Entropy with Logits Loss yang ramah untuk DirectML.
+class FocalDiceLoss(nn.Module):
+    """Combined Focal + Dice Loss untuk boundary detection yang lebih baik"""
 
-    Menghindari operasi in-place dan menggunakan operasi yang stabil
-    untuk kompatibilitas dengan DML backend.
+    def __init__(self, alpha=0.25, gamma=2.0, smooth=1.0):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.smooth = smooth
 
-    Args:
-        weight (Tensor, optional): Weight manual untuk setiap batch element
-        reduction (str): 'none' | 'mean' | 'sum'. Default: 'mean'
-        pos_weight (Tensor, optional): Weight untuk positive examples
-    """
+    def focal_loss(self, pred, target):
+        bce = F.binary_cross_entropy_with_logits(pred, target, reduction='none')
+        pt = torch.exp(-bce)
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * bce
+        return focal_loss.mean()
 
-    def __init__(self, weight=None, reduction='mean', pos_weight=None):
-        super(BCEWithLogitsLoss, self).__init__()
-        self.register_buffer('weight', weight)
-        self.register_buffer('pos_weight', pos_weight)
-        self.reduction = reduction
+    def dice_loss(self, pred, target):
+        pred = torch.sigmoid(pred)
+        intersection = (pred * target).sum()
+        union = pred.sum() + target.sum()
+        dice = (2.0 * intersection + self.smooth) / (union + self.smooth)
+        return 1.0 - dice
 
-    def forward(self, input, target):
-        """
-        Args:
-            input: Logits dari model (sebelum sigmoid), shape (N, *)
-            target: Ground truth labels (0 atau 1), shape (N, *)
-
-        Returns:
-            loss: Scalar jika reduction='mean'/'sum', tensor jika 'none'
-        """
-        # Validasi input
-        assert input.shape == target.shape, \
-            f"Input shape {input.shape} harus sama dengan target shape {target.shape}"
-
-        # Hitung max untuk numerical stability
-        # Gunakan clamp untuk menghindari overflow di DML
-        max_val = torch.clamp(input, min=0)
-
-        # Formula BCE with logits yang stabil:
-        # loss = max(x, 0) - x * z + log(1 + exp(-abs(x)))
-        # dimana x = input, z = target
-
-        # Hindari in-place operations untuk DML
-        loss = max_val - input * target + torch.log1p(torch.exp(-torch.abs(input)))
-
-        # Terapkan pos_weight jika ada
-        if self.pos_weight is not None:
-            # pos_weight diterapkan pada positive examples
-            log_weight = torch.ones_like(input)
-            log_weight = log_weight + (self.pos_weight - 1) * target
-            loss = loss * log_weight
-
-        # Terapkan weight jika ada
-        if self.weight is not None:
-            loss = loss * self.weight
-
-        # Reduction
-        if self.reduction == 'none':
-            return loss
-        elif self.reduction == 'mean':
-            return torch.mean(loss)
-        elif self.reduction == 'sum':
-            return torch.sum(loss)
-        else:
-            raise ValueError(f"Reduction tidak valid: {self.reduction}")
+    def forward(self, pred, target):
+        focal = self.focal_loss(pred, target)
+        dice = self.dice_loss(pred, target)
+        return focal + dice
 
 
 class Trainer:
@@ -157,16 +96,8 @@ class Trainer:
         self.logger = logger
 
         # Setup criterion
-        # self.criterion = criterion
-        # if self.criterion is None:
-        #     # Gunakan custom BCEWithLogitsDML jika menggunakan DirectML
-        #     if "privateuseone" in str(
-        #         self.device
-        #     ):  # DirectML menggunakan privateuseone
-        self.criterion = BCEWithLogitsLoss().to(self.device)
-        #         print("Menggunakan BCEWithLogitsDML untuk DirectML")
-        #     else:
         # self.criterion = nn.BCEWithLogitsLoss()
+        self.criterion = FocalDiceLoss()
 
     def is_directml_device(self, device):
         """Cek apakah device adalah DirectML"""

@@ -7,6 +7,7 @@ from torchinfo import summary
 from utility.Writer import TensorWriter
 from model.parser import ConfigParser
 from utility.splitter import DataSplitter
+from utility.monitor import  SystemMonitor
 
 supported_mode = ["train", "test", "ls", "debug", "split", "info"]
 
@@ -54,6 +55,9 @@ def main():
     debug_parser = subparser.add_parser("debug", help="debug model")
     debug_parser.add_argument("--cfg", type=str)
 
+    info_parser = subparser.add_parser("info", help="info model")
+    info_parser.add_argument("--model", type=str)
+
     parser.add_argument("--compile", type=bool, default=True)
     train_parser.add_argument("--note", type=str, default="")
 
@@ -97,6 +101,8 @@ def main():
     logger = None
     if args.log is not None:
         logger = TensorWriter(model.__class__.__name__, args.log, args.note)
+        # sm = SystemMonitor(logger)
+        # sm.start()
 
     #  create data loader from data
     data_loader = InternalDataLoader(args=args)
