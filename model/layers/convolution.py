@@ -3,6 +3,20 @@ import torch.nn as nn
 from .register import register_layer
 
 
+class ConvBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, k, s, p, use_bn=False):
+        super().__init__()
+        self.conv = nn.Conv1d(in_ch, out_ch, k, s, p)
+        self.bn = nn.BatchNorm1d(out_ch) if use_bn else None
+        self.act = nn.LeakyReLU(0.1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        if self.bn:
+            x = self.bn(x)
+        return self.act(x)
+
+
 @register_layer("convolutional")
 class ConvolutionLayer(LayerBuilder):
     def __init__(self, block):
@@ -16,18 +30,8 @@ class ConvolutionLayer(LayerBuilder):
         self.batch_norm = int(block.get("batch_normalize", 0))
 
     def build(self):
-        layers = []
-        layers.append(
-            nn.Conv1d(
-                in_channels=self.in_channels,
-                out_channels=self.out_channels,
-                kernel_size=self.kernel_size,
-                stride=self.stride,
-                padding=self.padding,
-            )
-        )
-        
-        if self.batch_norm:
-            layers.append(nn.BatchNorm1d(self.out_channels))
+        return ConvBlock(self.in_channels, self.out_channels, self.kernel_size, self.stride, self.padding,
+                         self.batch_norm)
 
-        return nn.Sequential(*layers)
+
+__all__ = ["ConvolutionLayer"]

@@ -1,10 +1,29 @@
 from .layers.register import LAYER_REGISTRY
 from torch import nn
-
+from .layers.route import RouteOp
+import torch
 
 class NetBuilder(nn.Module):
-    def __init__(self):
-        pass
+    def __init__(self, builders):
+        super().__init__()
+
+        self.layers = nn.ModuleList()
+
+        # build dari builder
+        for i, b in enumerate(builders):
+            module = b.build()
+            self.layers.append(module)
+
+    def forward(self, x):
+        outputs = [x]
+
+        for i, layer in enumerate(self.layers):
+            print(i, layer)
+
+            x = layer(x)
+            outputs.append(x)
+
+        return outputs
 
 
 class ConfigParser:
@@ -50,38 +69,43 @@ class ConfigParser:
         ) in zip(layers, range(len(layers))):
 
             type = l["type"]
-            print(f"Parsing layer of type: {type}")
+            # print(f"Parsing layer of type: {type}")
             if type == "net":
                 batch = int(l.get("batch", 32))
                 print(f"Batch size: {batch}")
                 continue
 
-            if type == "route":
-                layers_idxs = l.get("layers", "")
-                print(f"Route layers: {layers_idxs}")
-                last_parent = [
-                    i + int(x) if int(x) < 0 else int(x) for x in layers_idxs.split(",")
-                ]
-                continue
+            # if type =`= "route":
+            #     layers_idxs = l.get("layers", "")
+            #     print(f"Route layers: {layers_idxs}")
+            #     last_parent = [
+            #         i + int(x) if int(x) < 0 else int(x) for x in layers_idxs.split(",")
+            #     ]
+            #     continue`
 
             if type not in LAYER_REGISTRY:
                 raise ValueError(f"Layer type {type} not registered")
 
             params = {k: v for k, v in l.items() if k != "type"}
-            print(f"Parameters for layer {type}: {params}")
+            # print(f"Parameters for layer {type}: {params}")
 
-            layer = LAYER_REGISTRY[type](params).build()
-            activation_name = l.get("activation", "linear")
-
-            activation_dict = nn.ModuleDict({
-                "relu": nn.ReLU(),
-            })
-            activate = LAYER_REGISTRY[activation_name](params).build()
-            print(f"Built layer: {layer} activation: {activate}")
+            layer = LAYER_REGISTRY[type](params)
+            # activation_name = l.get("activation", "linear")
+            #
+            # activation_dict = nn.ModuleDict({
+            #     "relu": nn.ReLU(),
+            # })
+            # activate = LAYER_REGISTRY[activation_name](params)
+            # # print(f"Built layer: {layer} activation: {activate}")
 
             self.builded_layers.append(layer)
 
-            # (**{k: v for k, v in l.items() if k != "type"}
-            # layer = LAYER_REGISTRY[type]().build()
-            # print(f"Built layer: {layer}")
+        # m = nn.ModuleList(self.builded_layers)
+        # print(m)
+        m = NetBuilder(self.builded_layers)
+        m(torch.randn(1, 3, 224, 224))
+        # (**{k: v
+        # for k, v in l.items() if k != "type"}
+        # layer = LAYER_REGISTRY[type]().build()
+        # print(f"Built layer: {layer}")
         # return layers

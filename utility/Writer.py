@@ -13,7 +13,7 @@ class TensorWriter:
         current_time = datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
         self.log_dir = os.path.join(base_dir, f"{experiment_name}_{current_time}")
         if note is not None:
-            self.log_dir = os.path.join(self.log_dir, "_".join(note))
+            self.log_dir = os.path.join(self.log_dir, note)
         print(f"Logging to {self.log_dir}")
 
     def get_writer(self, name):
