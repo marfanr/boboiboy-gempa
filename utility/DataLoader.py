@@ -14,17 +14,17 @@ BROKEN
 
 class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
     def __init__(
-        self,
-        length,
-        x,
-        y,
-        meta,
-        stride,
-        count,
-        offset_pos,
-        x_margin=400,
-        normalize=True,
-        noise_level=0.01,
+            self,
+            length,
+            x,
+            y,
+            meta,
+            stride,
+            count,
+            offset_pos,
+            x_margin=400,
+            normalize=True,
+            noise_level=0.01,
     ):
         self.data_length = length
         self.x = x
@@ -53,7 +53,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
             interval_len = end_interval - start_interval
             if interval_len >= self.data_length:
                 for w_start in range(
-                    start_interval, end_interval - self.data_length + 1, stride
+                        start_interval, end_interval - self.data_length + 1, stride
                 ):
                     self.windows.append((sample_idx, w_start))
 
@@ -85,8 +85,8 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         if self.noise_level > 0:
             if np.random.random() > 0.5:
                 noise = (
-                    torch.randn_like(x_window, device=x_window.device)
-                    * self.noise_level
+                        torch.randn_like(x_window, device=x_window.device)
+                        * self.noise_level
                 )
                 x_window += noise
 
@@ -127,7 +127,7 @@ class DataLoader:
             self.df = pd.read_csv(args.csv)
             df_noice = self.df[self.df.trace_category == "noise"]
             df_noice = df_noice.sample(
-                n=0.5*len(self.df),
+                n=int(0.5 * len(self.df)),
                 replace=True,
                 random_state=42
             )
@@ -144,7 +144,7 @@ class DataLoader:
 
             if len(df_noice) > 0:
                 train_noice, test_noice = train_test_split(
-                    df_noice ,
+                    df_noice,
                     test_size=0.2,
                     shuffle=False,
                 )
