@@ -57,10 +57,12 @@ class Trainer:
         optimizer=None,
         criterion=None,
         device=None,  # ← Tambahkan parameter device
+        compile: bool = False
     ):
         print(f"iterasi_per_epoch {len(train)} , {len(test)}")
         self.train_dl = train
         self.test_dl = test
+        self.compile = compile
 
         # Set device dengan prioritas: parameter -> CUDA -> DirectML -> CPU
         if device is None:
@@ -73,7 +75,7 @@ class Trainer:
         # Move model to device
         self.model: nn.Module = model.to(self.device)
 
-        if not self.is_directml_device(self.device):
+        if not self.is_directml_device(self.device) or self.compile:
             print(f"compiling model ...")
             self.model = torch.compile(self.model, mode="default")
 

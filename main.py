@@ -7,7 +7,6 @@ from torchinfo import summary
 from utility.Writer import TensorWriter
 from model.parser import ConfigParser
 from utility.splitter import DataSplitter
-from utility.monitor import  SystemMonitor
 
 supported_mode = ["train", "test", "ls", "debug", "split", "info"]
 
@@ -51,6 +50,8 @@ def main():
     train_parser.add_argument("--log", type=str)
     train_parser.add_argument("--noice", type=float, default=0.3)
     train_parser.add_argument("--normalize", type=bool, default=True)
+    train_parser.add_argument("--compile", type=bool, default=False)
+    train_parser.add_argument("--gpu_parallel", type=bool, default=False)
 
     debug_parser = subparser.add_parser("debug", help="debug model")
     debug_parser.add_argument("--cfg", type=str)
@@ -62,7 +63,6 @@ def main():
     train_parser.add_argument("--note", type=str, default="")
 
     # TODO: to be implemented
-    parser.add_argument("--gpu_parallel", type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -115,25 +115,36 @@ def main():
     # train_ds.lab
 
     if args.hdf5 is not None and args.csv is not None:
-        train_dataLoader = DataLoader(
-            train_ds,
-            batch_size=args.batch,
-            shuffle=True,
-            # num_workers=4,              # ← PENTING: parallel loading
-            # pin_memory=True,            # ← PENTING: untuk CUDA
-            # persistent_workers=True,    # ← workers tidak di-restart tiap epoch
-            # prefetch_factor=2           # ← pre-load 2 batch ke depan
-        )
-
-        test_dataLoader = DataLoader(
-            test_ds,
-            batch_size=args.batch,
-            shuffle=False,
-            # num_workers=4,
-            # pin_memory=True,
-            # persistent_workers=True,
-            # prefetch_factor=2
-        )
+        if args.gpu_parallel:
+            train_dataLoader = DataLoader(
+                train_ds,
+                batch_size=args.batch,
+                shuffle=True,
+                num_workers=4,              # ← PENTING: parallel loading
+                pin_memory=True,            # ← PENTING: untuk CUDA
+                persistent_workers=True,    # ← workers tidak di-restart tiap epoch
+                prefetch_factor=2           # ← pre-load 2 batch ke depan
+            )
+            test_dataLoader = DataLoader(
+                test_ds,
+                batch_size=args.batch,
+                shuffle=False,
+                num_workers=4,
+                pin_memory=True,
+                persistent_workers=True,
+                prefetch_factor=2
+            )
+        else:
+            train_dataLoader = DataLoader(
+                train_ds,
+                batch_size=args.batch,
+                shuffle=True,
+            )
+            test_dataLoader = DataLoader(
+                test_ds,
+                batch_size=args.batch,
+                shuffle=False,
+            )
 
     else:
         train_dataLoader = DataLoader(
@@ -152,7 +163,7 @@ def main():
         )
 
     if args.mode == "train":
-        trainer = Trainer(train_dataLoader, test_dataLoader, model, logger=logger)
+        trainer = Trainer(train_dataLoader, test_dataLoader, model, logger=logger, compile=args.compile)
         if args.hdf5 is not None:
             print("using hdf5")
 
