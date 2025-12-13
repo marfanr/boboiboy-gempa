@@ -137,37 +137,36 @@ class DataLoader:
             self.df_train = df[df.source_id.isin(train_events)]
             self.df_test = df[df.source_id.isin(test_events)]
 
-            # if len(df_noice) > 0:
-            #     df_noice = df_noice.sample(
-            #         n=int(1 * len(self.df)),
-            #         replace=True,
-            #         random_state=42
-            #     )
-            #     train_noice, test_noice = train_test_split(
-            #         df_noice,
-            #         test_size=0.2,
-            #         shuffle=False,
-            #     )
-            #     self.df_train = pd.concat(
-            #         [self.df_train, train_noice],
-            #         axis=0,
-            #         ignore_index=True
-            #     )
-            #
-            #     self.df_test = pd.concat(
-            #         [self.df_test, test_noice],
-            #         axis=0,
-            #         ignore_index=True
-            #     )
-            #     self.df_train = self.df_train.sample(
-            #         frac=1.0,
-            #         random_state=42
-            #     ).reset_index(drop=True)
-            #
-            #     self.df_test = self.df_test.sample(
-            #         frac=1.0,
-            #         random_state=42
-            #     ).reset_index(drop=True)
+            if len(df_noice) > 0:
+                # df_noice = df_noice.sample(
+                #     n=int(1 * len(self.df)),
+                #     replace=True,
+                #     random_state=42
+                # )
+                train_noice, test_noice = train_test_split(
+                    df_noice,
+                    test_size=0.2,
+                    shuffle=False,
+                )
+                self.df_train = pd.concat(
+                    [self.df_train, train_noice],
+                    axis=0,
+                    ignore_index=True
+                )
+                self.df_test = pd.concat(
+                    [self.df_test, test_noice],
+                    axis=0,
+                    ignore_index=True
+                )
+                self.df_train = self.df_train.sample(
+                    frac=1.0,
+                    random_state=42
+                ).reset_index(drop=True)
+
+                self.df_test = self.df_test.sample(
+                    frac=1.0,
+                    random_state=42
+                ).reset_index(drop=True)
 
             self.hdf5 = args.hdf5
             print("using hdf5 and csv")
