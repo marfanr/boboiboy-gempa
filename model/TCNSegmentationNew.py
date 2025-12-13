@@ -182,3 +182,66 @@ class TCNSegmentation(nn.Module):
         return x[..., :orig_len]
 
 
+
+@ModelLoader.register("TCNSegmentationNewWithoutASPP")
+class TCNSegmentationWithoutASPP(nn.Module):
+    def __init__(self, levels=6, dropout=0.2):
+        super().__init__()
+        self.__class__.__name__ = "TCNSegmentationNewWithoutASPP"
+
+        # Encoder
+        self.enc1 = EncoderBlock(3, 16, 9, dropout=dropout)
+        self.enc2 = EncoderBlock(16, 32, 7, dropout=dropout)
+        self.enc3 = EncoderBlock(32, 64, 5, dropout=dropout)
+        self.enc4 = EncoderBlock(64, 128, 3, pool=True, dropout=dropout)
+
+        # Multi-scale feature extraction
+        self.aspp = ASPP(128, 32)
+
+        # TCN backbone
+        layers = []
+        for i in range(levels):
+            dilation = 2 ** i
+            layers.append(TemporalConvLayer(128, 5, dilation))
+        self.network = nn.Sequential(*layers)
+
+        # Decoder
+        self.dec4 = DecoderBlock(128, 64, 3, dropout=dropout)
+        self.dec3 = DecoderBlock(64, 32, 5, dropout=dropout)
+        self.dec2 = DecoderBlock(32, 16, 7, dropout=dropout)
+        self.dec1 = DecoderBlock(16, 8, 9, dropout=dropout)
+
+        # Segmentation head
+        self.head = nn.Sequential(
+            nn.Conv1d(8, 4, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(4, 1, 1)
+        )
+
+    def forward(self, x):
+        orig_len = x.size(-1)
+        pad_to = ((orig_len + 15) // 16) * 16
+        pad_amount = pad_to - orig_len
+
+        if pad_amount > 0:
+            x = F.pad(x, (0, pad_amount))
+
+        # Encoding
+        x = self.enc1(x)
+        x = self.enc2(x)
+        x = self.enc3(x)
+        x = self.enc4(x)
+
+        # Multi-scale features + TCN
+        x = self.network(x)
+
+        # Decoding
+        x = self.dec4(x)
+        x = self.dec3(x)
+        x = self.dec2(x)
+        x = self.dec1(x)
+
+        # Segmentation
+        x = self.head(x)
+
+        return x[..., :orig_len]
