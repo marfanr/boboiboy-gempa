@@ -12,7 +12,7 @@ class EncoderBlock(nn.Module):
             nn.ReLU(inplace=True),
         ]
         self.conv = nn.ModuleList(layers)
-        self.pool = nn.MaxPool1d(2) if pool else nn.Identity()
+        self.pool = nn.MaxPool1d(2, stride=2, ceil_mode=True) if pool else nn.Identity()
 
     def forward(self, x):
         for layer in self.conv:
@@ -40,6 +40,19 @@ class DecoderBlock(nn.Module):
         x = self.conv(x)
         # x = self.attention(x)
         return x
+
+class DynamicLayerNorm(nn.Module):
+    def __init__(self, eps=1e-5):
+        super().__init__()
+        self.eps = eps
+        self.ln = None
+
+    def forward(self, x):
+        if self.ln is None:
+            normalized_shape = x.shape[1:]
+            self.ln = nn.LayerNorm(normalized_shape, eps=self.eps).to(x.device)
+        return self.ln(x)
+
 
 @ModelLoader.register("TCNSegmentationV2")
 class TCNSegmentationV2(nn.Module):
@@ -70,22 +83,19 @@ class TCNSegmentationV2(nn.Module):
         self.dec4 = DecoderBlock(64, 32, 5, dropout=dropout)
         self.dec3 = DecoderBlock(32, 16, 7, dropout=dropout)
         self.dec2 = DecoderBlock(16, 8, 9, dropout=dropout)
+        self.dec1 = DecoderBlock(8, 4, 11, dropout=dropout)
 
         # ---------- Segmentation Head ----------
         self.head = nn.Sequential(
-            nn.Conv1d(8, 8, 3, padding=1),
-            nn.BatchNorm1d(8),
+            nn.Conv1d(4, 8, 3, padding=1),
+            # nn.LayerNorm(1200),
+            DynamicLayerNorm(eps=1e-5),
             nn.ReLU(inplace=True),
             nn.Conv1d(8, 1, 1)
         )
 
     def forward(self, x):
         orig_len = x.size(-1)
-        pad_to = ((orig_len + 15) // 16) * 16
-        pad_amount = pad_to - orig_len
-
-        if pad_amount > 0:
-            x = F.pad(x, (0, pad_amount))
 
         # Encoder
         x = self.enc1(x)
@@ -100,8 +110,9 @@ class TCNSegmentationV2(nn.Module):
         x = self.dec4(x)
         x = self.dec3(x)
         x = self.dec2(x)
+        x = self.dec1(x)
 
         # Head
         x = self.head(x)
 
-        return x[..., :orig_len]
+        return F.interpolate(x, orig_len, mode="linear", align_corners=False)
