@@ -320,6 +320,9 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         # print(f"Iterasi per epoch (batch=128): {int(new_total / 128):,}")
         # print(f"Balance ratio (min/max): {min(targets.values()) / max(targets.values()) * 100:.2f}%")
 
+"""
+New Dataset
+"""
 
 class NewHDF5WindowDataset(Dataset):
     def __init__(self, df: pd.DataFrame, hdf5_path: str):

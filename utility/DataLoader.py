@@ -125,7 +125,13 @@ class DataLoader:
             if args.csv is None:
                 raise ValueError("csv must be used with hdf5")
             self.df = pd.read_csv(args.csv)
-            df_noice =self.df[self.df.trace_category == "noise"]
+            df_noice = self.df[self.df.trace_category == "noise"]
+            df_noice = df_noice.sample(
+                n=len(0.5 * self.df),
+                replace=True,
+                random_state=42
+            )
+
             df = self.df[self.df.trace_category == "earthquake_local"]
             event_ids = df["source_id"].unique()
             train_events, test_events = train_test_split(
