@@ -372,8 +372,8 @@ class NewHDF5FullDataset(Dataset):
         # Normalisasi setelah augmentasi
         x_window = self._normalize(x_window)
 
-        P = int(wave.attrs["p_arrival_sample"])
-        S = int(wave.attrs["s_arrival_sample"])
+        P = int(wave.attrs.get("p_arrival_sample", -1))
+        S = int(wave.attrs.get("s_arrival_sample", -1))
 
         P = max(0, min(P, 6000))
         S = max(0, min(S, 6000))
