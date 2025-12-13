@@ -52,6 +52,7 @@ def main():
     train_parser.add_argument("--normalize", type=bool, default=True)
     train_parser.add_argument("--compile", type=bool, default=False)
     train_parser.add_argument("--gpu_parallel", type=bool, default=False)
+    train_parser.add_argument("--dataset", type=str, default="h5")
 
     debug_parser = subparser.add_parser("debug", help="debug model")
     debug_parser.add_argument("--cfg", type=str)
