@@ -127,7 +127,7 @@ class DataLoader:
             self.df = pd.read_csv(args.csv)
             df_noice = self.df[self.df.trace_category == "noise"]
             df_noice = df_noice.sample(
-                n=len(0.5 * self.df),
+                n=0.5*len(self.df),
                 replace=True,
                 random_state=42
             )
