@@ -126,12 +126,6 @@ class DataLoader:
                 raise ValueError("csv must be used with hdf5")
             self.df = pd.read_csv(args.csv)
             df_noice =self.df[self.df.trace_category == "noice"]
-            train_noice, test_noice = train_test_split(
-                df_noice ,
-                test_size=0.2,
-                shuffle=False,
-            )
-
             df = self.df[self.df.trace_category == "earthquake_local"]
             event_ids = df["source_id"].unique()
             train_events, test_events = train_test_split(
@@ -142,27 +136,32 @@ class DataLoader:
             self.df_train = df[df.source_id.isin(train_events)]
             self.df_test = df[df.source_id.isin(test_events)]
 
-            self.df_train = pd.concat(
-                [self.df_train, train_noice],
-                axis=0,
-                ignore_index=True
-            )
+            if len(df_noice) > 0:
+                train_noice, test_noice = train_test_split(
+                    df_noice ,
+                    test_size=0.2,
+                    shuffle=False,
+                )
+                self.df_train = pd.concat(
+                    [self.df_train, train_noice],
+                    axis=0,
+                    ignore_index=True
+                )
 
-            self.df_test = pd.concat(
-                [self.df_test, test_noice],
-                axis=0,
-                ignore_index=True
-            )
+                self.df_test = pd.concat(
+                    [self.df_test, test_noice],
+                    axis=0,
+                    ignore_index=True
+                )
+                self.df_train = self.df_train.sample(
+                    frac=1.0,
+                    random_state=42
+                ).reset_index(drop=True)
 
-            self.df_train = self.df_train.sample(
-                frac=1.0,
-                random_state=42
-            ).reset_index(drop=True)
-
-            self.df_test = self.df_test.sample(
-                frac=1.0,
-                random_state=42
-            ).reset_index(drop=True)
+                self.df_test = self.df_test.sample(
+                    frac=1.0,
+                    random_state=42
+                ).reset_index(drop=True)
 
             self.hdf5 = args.hdf5
             print("using hdf5 and csv")
