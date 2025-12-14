@@ -113,6 +113,13 @@ def main():
         6000, args.stride, args.test_count, args.test_pos, True
     )
 
+    sample_weights = train_ds.get_sample_weights()
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True,
+    )
+
     # train_ds.lab
 
     if args.hdf5 is not None and args.csv is not None:
@@ -137,9 +144,7 @@ def main():
             )
         else:
             train_dataLoader = DataLoader(
-                train_ds,
-                batch_size=args.batch,
-                shuffle=True,
+                train_ds, batch_size=args.batch, sampler=sampler
             )
             test_dataLoader = DataLoader(
                 test_ds,
@@ -162,6 +167,13 @@ def main():
             num_workers=0,
             pin_memory=True,
         )
+
+    # Buat WeightedRandomSampler
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True,  # Dengan replacement untuk oversampling
+    )
 
     if args.mode == "train":
         trainer = Trainer(

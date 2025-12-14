@@ -29,7 +29,7 @@ class FocalDiceLoss(nn.Module):
         self.smooth = smooth
 
     def focal_loss(self, pred, target):
-        bce = F.binary_cross_entropy_with_logits(pred, target, reduction='none')
+        bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
         pt = torch.exp(-bce)
         focal_loss = self.alpha * (1 - pt) ** self.gamma * bce
         return focal_loss.mean()
@@ -57,7 +57,7 @@ class Trainer:
         optimizer=None,
         criterion=None,
         device=None,  # ← Tambahkan parameter device
-        compile: bool = False
+        compile: bool = False,
     ):
         print(f"iterasi_per_epoch {len(train)} , {len(test)}")
         self.train_dl = train
@@ -143,19 +143,20 @@ class Trainer:
             return torch.device("cpu")
 
     def train_step(self, engine, batch):
-        self.model.train()
-        inputs, targets = batch
+        with torch.autocast(device_type="cpu", dtype=torch.float16):
+            self.model.train()
+            inputs, targets = batch
 
-        self.optimizer.zero_grad(set_to_none=True)
+            self.optimizer.zero_grad(set_to_none=True)
 
-        # Gunakan self.device
-        outputs = self.model(inputs.to(self.device))
-        loss = self.criterion(outputs, targets.to(self.device))
-        if torch.isnan(loss) or torch.isinf(loss):
-            print(f"Batch loss invalid")
-        loss.backward()
-        self.optimizer.step()
-        return loss.item()
+            # Gunakan self.device
+            outputs = self.model(inputs.to(self.device))
+            loss = self.criterion(outputs, targets.to(self.device))
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"Batch loss invalid")
+            loss.backward()
+            self.optimizer.step()
+            return loss.item()
 
     def threshold_output(self, output):
         y_pred, y = output
@@ -243,7 +244,7 @@ class Trainer:
 
         if weight is not None:
             best_checkpoints = torch.load(weight, map_location="cpu", mmap=True)
-            self.model.load_state_dict(best_checkpoints["model"])
+            self.model.load_state_dict(best_checkpoints["model"], False)
             self.model = self.model.to(self.device)
             if "optimizer_state" in best_checkpoints:
                 self.optimizer.load_state_dict(best_checkpoints["optimizer_state"])

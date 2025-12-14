@@ -327,8 +327,237 @@ New Dataset
 
 
 class NewHDF5WindowDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, hdf5_path: str):
-        super().__init__()
+    def __init__(
+        self,
+        length,
+        df,
+        hdf5_path,
+        count,
+        stride=500,
+        offset_pos=0,
+        x_margin=100,
+        normalize=False,
+        noise_level=0.4,
+        windows=None,
+    ):
+        self.data_length = length
+        self.df = df
+        self.hdf5_path = hdf5_path
+        self.stride = stride
+        self.count = count
+        self.offset_pos = offset_pos
+        self.x_margin = x_margin
+        self.normalize = normalize
+        self.noise_level = noise_level
+        self.h5 = None
+
+        if windows is None:
+            self.windows, self.labels = self._build_windows()
+        else:
+            self.windows = windows
+            self.labels = None
+
+    def _lazy_init(self):
+        if self.h5 is None:
+            self.h5 = h5py.File(self.hdf5_path, "r", swmr=True, libver="latest")
+
+    def _build_windows(self):
+        start = self.offset_pos
+        end = self.offset_pos + self.count
+        print(f"Building windows from {start} to {end} ...")
+
+        with h5py.File(self.hdf5_path, "r", swmr=True, libver="latest") as h5:
+            L = h5["data/" + self.df.iloc[0].trace_name].shape[0]
+
+        P = self.df.p_arrival_sample.to_numpy()
+        S = self.df.s_arrival_sample.to_numpy()
+
+        P_left = np.maximum(0, P - self.x_margin)
+        P_right = np.minimum(6000, P + self.x_margin)
+
+        S_left = np.maximum(0, S - self.x_margin)
+        S_right = np.minimum(6000, S + self.x_margin)
+
+        window_starts = np.arange(0, 6000 - self.data_length + 1, self.stride)
+        window_ends = window_starts + self.data_length
+
+        # Window valid jika masuk margin P atau S
+        P_valid = (window_starts[None, :] < P_right[:, None]) & (
+            window_ends[None, :] > P_left[:, None]
+        )
+
+        S_valid = (window_starts[None, :] < S_right[:, None]) & (
+            window_ends[None, :] > S_left[:, None]
+        )
+
+        # Window yang benar-benar mengandung arrival
+        P_in = (P[:, None] >= window_starts[None, :]) & (
+            P[:, None] < window_ends[None, :]
+        )
+        S_in = (S[:, None] >= window_starts[None, :]) & (
+            S[:, None] < window_ends[None, :]
+        )
+
+        P_eff = P_valid & P_in
+        S_eff = S_valid & S_in
+
+        # Hitung kategori
+        category = {
+            "P_and_S": np.sum(P_eff & S_eff),
+            "P_only": np.sum(P_eff & ~S_eff),
+            "S_only": np.sum(~P_eff & S_eff),
+            "no_P_no_S": np.sum((P_valid | S_valid) & ~P_eff & ~S_eff),
+        }
+
+        print("Distribusi kelas:")
+        for k, v in category.items():
+            print(f"  {k}: {v}")
+
+        # Ekstrak indices
+        idx_p_and_s = np.where(P_eff & S_eff)
+        idx_p_only = np.where(P_eff & ~S_eff)
+        idx_s_only = np.where(~P_eff & S_eff)
+        idx_no_p_no_s = np.where((P_valid | S_valid) & ~P_eff & ~S_eff)
+
+        windows_p_and_s = list(zip(idx_p_and_s[0], idx_p_and_s[1]))
+        windows_p_only = list(zip(idx_p_only[0], idx_p_only[1]))
+        windows_s_only = list(zip(idx_s_only[0], idx_s_only[1]))
+        windows_no_p_no_s = list(zip(idx_no_p_no_s[0], idx_no_p_no_s[1]))
+
+        # Gabungkan semua windows
+        all_windows = (
+            windows_p_and_s + windows_p_only + windows_s_only + windows_no_p_no_s
+        )
+
+        # Buat label untuk setiap window
+        # 0: P_and_S, 1: P_only, 2: S_only, 3: no_P_no_S
+        all_labels = np.array(
+            [0] * len(windows_p_and_s)
+            + [1] * len(windows_p_only)
+            + [2] * len(windows_s_only)
+            + [3] * len(windows_no_p_no_s)
+        )
+
+        print(f"Total windows: {len(all_windows)}")
+
+        return all_windows, all_labels
+
+    def get_sample_weights(self, balancing_rules=None):
+        """
+        Menghitung sample weights untuk WeightedRandomSampler
+
+        Args:
+            balancing_rules: dict dengan key "min", "2nd_min", "middle", "max"
+                           berisi koefisien target relatif terhadap kelas terbesar
+                           Default: {"min": 0.8, "2nd_min": 0.8, "middle": 0.8, "max": 0.8}
+
+        Returns:
+            torch.Tensor: weights untuk setiap sample
+        """
+        if balancing_rules is None:
+            balancing_rules = {
+                "min": 0.8,
+                "2nd_min": 0.8,
+                "middle": 0.8,
+                "max": 0.8,
+            }
+
+        # Hitung jumlah sample per kelas
+        unique_labels, counts = np.unique(self.labels, return_counts=True)
+        class_counts = dict(zip(unique_labels, counts))
+
+        # Urutkan berdasarkan jumlah
+        sorted_classes = sorted(class_counts.items(), key=lambda x: x[1])
+
+        # Tentukan target count untuk setiap kelas
+        max_count = sorted_classes[-1][1]
+        class_targets = {}
+
+        print("\n=== Perhitungan Weight untuk Balancing ===")
+        for idx, (label, count) in enumerate(sorted_classes):
+            if idx == 0:
+                coef = balancing_rules["min"]
+                label_str = "min"
+            elif idx == 1:
+                coef = balancing_rules["2nd_min"]
+                label_str = "2nd_min"
+            elif idx == len(sorted_classes) - 1:
+                coef = balancing_rules["max"]
+                label_str = "max"
+            else:
+                coef = balancing_rules["middle"]
+                label_str = "middle"
+
+            target = max_count * coef
+            class_targets[label] = target
+
+            class_name = ["P_and_S", "P_only", "S_only", "no_P_no_S"][label]
+            print(
+                f"Kelas {class_name:15} ({label_str:8}): {count:,} samples, target weight: {target/count:.4f}"
+            )
+
+        # Hitung weight untuk setiap sample
+        # Weight = target_count / actual_count
+        # Semakin kecil kelasnya, semakin besar weightnya
+        sample_weights = np.zeros(len(self.labels))
+        for label in unique_labels:
+            mask = self.labels == label
+            weight = class_targets[label] / class_counts[label]
+            sample_weights[mask] = weight
+
+        print(
+            f"\nTotal effective samples setelah weighting: {sample_weights.sum():.0f}"
+        )
+        print("=" * 50)
+
+        return torch.DoubleTensor(sample_weights)
+
+    def __len__(self):
+        return len(self.windows)
+
+    def __getitem__(self, idx):
+        self._lazy_init()
+        return self._get_single(idx)
+
+    def _get_single(self, idx):
+        sample_idx, x_start = self.windows[idx]
+        curr_df = self.df.iloc[sample_idx]
+
+        data = self.h5["data/" + curr_df.trace_name]
+        x_end = x_start + self.data_length
+
+        x_window = torch.from_numpy(data[x_start:x_end]).float().T
+
+        if self.normalize:
+            x_window = self._normalize(x_window)
+
+        if self.noise_level > 0:
+            x_window = self._augmentation(x_window)
+
+        label = torch.zeros(self.data_length, dtype=torch.float32)
+
+        P_in_window = curr_df.p_arrival_sample - x_start
+        S_in_window = curr_df.s_arrival_sample - x_start
+
+        margin = 50
+        a = max(0, P_in_window - margin)
+        b = min(self.data_length, S_in_window + margin)
+
+        if a < b:
+            label[int(a) : int(b)] = 1.0
+
+        return x_window, label.unsqueeze(0)
+
+    def _normalize(self, wave):
+        rms = torch.sqrt(torch.mean(wave**2, dim=1, keepdim=True) + 1e-4)
+        wave = wave / rms
+        return wave
+
+    def _augmentation(self, x_window):
+        if np.random.random() > 0.5:
+            noise = torch.randn_like(x_window) * self.noise_level
+            x_window = x_window + noise
+        return x_window
 
 
 class NewHDF5FullDataset(Dataset):

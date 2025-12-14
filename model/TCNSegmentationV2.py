@@ -106,7 +106,7 @@ class DynamicLayerNorm(nn.Module):
 
 @ModelLoader.register("TCNSegmentationV2")
 class TCNSegmentationV2(nn.Module):
-    def __init__(self, levels=3, dropout=0.2):
+    def __init__(self, levels=4, dropout=0.2):
         super().__init__()
         self.__class__.__name__ = "TCNSegmentationV2"
 
@@ -118,23 +118,21 @@ class TCNSegmentationV2(nn.Module):
                 EncoderBlock(16, 16, 9, dropout=dropout),
                 EncoderBlock(16, 32, 7, dropout=dropout),
                 EncoderBlock(32, 32, 7, dropout=dropout),
-                EncoderBlock(32, 64, 5, pool=True, dropout=dropout),
-                EncoderBlock(64, 64, 3, pool=True, dropout=dropout),
             ]
         )
 
         # ---------- ResCNN ----------
         self.res_cnn = nn.ModuleList(
             [
-                ResCNNBlock(64, kernel_size=3, dropout=dropout),
-                ResCNNBlock(64, kernel_size=3, dropout=dropout),
-                ResCNNBlock(64, kernel_size=3, dropout=dropout),
+                ResCNNBlock(32, kernel_size=3, dropout=dropout),
+                ResCNNBlock(32, kernel_size=3, dropout=dropout),
+                ResCNNBlock(32, kernel_size=3, dropout=dropout),
             ]
         )
 
         # ---------- Transformer (Bottleneck) ----------
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=64,
+            d_model=32,
             nhead=8,
             dim_feedforward=256,
             dropout=dropout,
@@ -151,16 +149,14 @@ class TCNSegmentationV2(nn.Module):
         tcn_layers = []
         for i in range(levels):
             dilation = 2**i
-            tcn_layers.append(TemporalConvLayer(ch=64, k=5, dilation=dilation))
+            tcn_layers.append(TemporalConvLayer(ch=32, k=5, dilation=dilation))
         self.tcn = nn.Sequential(*tcn_layers)
 
         # ---------- Decoder ----------
         self.dec = nn.ModuleList(
             [
-                DecoderBlock(64, 64, 3, dropout=dropout),
-                DecoderBlock(64, 32, 5, dropout=dropout),
                 DecoderBlock(32, 32, 7, dropout=dropout),
-                DecoderBlock(32, 16, 9, dropout=dropout),
+                DecoderBlock(32, 16, 7, dropout=dropout),
                 DecoderBlock(16, 16, 9, dropout=dropout),
                 DecoderBlock(16, 8, 11, dropout=dropout),
                 DecoderBlock(8, 8, 11, dropout=dropout),
@@ -185,6 +181,8 @@ class TCNSegmentationV2(nn.Module):
         for block in self.res_cnn:
             x = block(x)
 
+        x = self.tcn(x)
+
         # ---------- Transformer ----------
         # (B, C, T) -> (T, B, C)
         x = x.permute(2, 0, 1)
@@ -192,7 +190,6 @@ class TCNSegmentationV2(nn.Module):
         x = x.permute(1, 2, 0)  # back to (B, C, T)
 
         # ---------- TCN ----------
-        x = self.tcn(x)
 
         # Decoder
         for block in self.dec:
