@@ -320,9 +320,11 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
         # print(f"Iterasi per epoch (batch=128): {int(new_total / 128):,}")
         # print(f"Balance ratio (min/max): {min(targets.values()) / max(targets.values()) * 100:.2f}%")
 
+
 """
 New Dataset
 """
+
 
 class NewHDF5WindowDataset(Dataset):
     def __init__(self, df: pd.DataFrame, hdf5_path: str):
@@ -334,13 +336,15 @@ class NewHDF5FullDataset(Dataset):
         super().__init__()
         self.hdf5_path = hdf5_path
         self.df = df
-        self.hdf5_instance : h5py.File = None
+        self.hdf5_instance: h5py.File = None
         self.noise_level = 0.4
         self.__lazy_init()
 
     def __lazy_init(self):
         if self.hdf5_instance is None:
-            self.hdf5_instance = h5py.File(self.hdf5_path, "r", swmr=True, libver="latest")
+            self.hdf5_instance = h5py.File(
+                self.hdf5_path, "r", swmr=True, libver="latest"
+            )
 
     def __len__(self):
         return len(self.df)
@@ -352,12 +356,16 @@ class NewHDF5FullDataset(Dataset):
 
         if np.random.random() > 0.5:
             # 1. Gaussian Noise
-            noise = torch.randn_like(x_window, device=x_window.device) * self.noise_level
+            noise = (
+                torch.randn_like(x_window, device=x_window.device) * self.noise_level
+            )
             x_window += noise
 
         if np.random.random() > 0.5:
             # 2. Random amplitude scaling
-            scale = 0.8 + 0.4 * torch.rand(1, device=x_window.device)  # skala antara 0.8 - 1.2
+            scale = 0.8 + 0.4 * torch.rand(
+                1, device=x_window.device
+            )  # skala antara 0.8 - 1.2
             x_window *= scale
 
         if np.random.random() > 0.5:
@@ -370,7 +378,7 @@ class NewHDF5FullDataset(Dataset):
             t = x_window.shape[1]
             mask_width = int(0.1 * t)  # mask 10% dari panjang
             start = int(torch.randint(0, t - mask_width, (1,)).item())
-            x_window[:, start:start + mask_width] = 0
+            x_window[:, start : start + mask_width] = 0
 
         # Normalisasi setelah augmentasi
         x_window = self._normalize(x_window)
@@ -392,7 +400,9 @@ class NewHDF5FullDataset(Dataset):
     def _normalize(self, wave):
         # Hitung mean dan std per batch (dim=1)
         mean = torch.mean(wave, dim=1, keepdim=True)
-        std = torch.std(wave, dim=1, keepdim=True) + 1e-8  # tambahkan epsilon agar tidak divisi 0
+        std = (
+            torch.std(wave, dim=1, keepdim=True) + 1e-8
+        )  # tambahkan epsilon agar tidak divisi 0
 
         # Normalisasi
         wave = (wave - mean) / std
@@ -401,5 +411,3 @@ class NewHDF5FullDataset(Dataset):
         wave = torch.clamp(wave, min=-10, max=10)
 
         return wave
-
-

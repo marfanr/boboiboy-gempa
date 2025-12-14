@@ -121,10 +121,10 @@ def main():
                 train_ds,
                 batch_size=args.batch,
                 shuffle=True,
-                num_workers=4,              # ← PENTING: parallel loading
-                pin_memory=True,            # ← PENTING: untuk CUDA
-                persistent_workers=True,    # ← workers tidak di-restart tiap epoch
-                prefetch_factor=2           # ← pre-load 2 batch ke depan
+                num_workers=4,  # ← PENTING: parallel loading
+                pin_memory=True,  # ← PENTING: untuk CUDA
+                persistent_workers=True,  # ← workers tidak di-restart tiap epoch
+                prefetch_factor=2,  # ← pre-load 2 batch ke depan
             )
             test_dataLoader = DataLoader(
                 test_ds,
@@ -133,7 +133,7 @@ def main():
                 num_workers=4,
                 pin_memory=True,
                 persistent_workers=True,
-                prefetch_factor=2
+                prefetch_factor=2,
             )
         else:
             train_dataLoader = DataLoader(
@@ -164,7 +164,13 @@ def main():
         )
 
     if args.mode == "train":
-        trainer = Trainer(train_dataLoader, test_dataLoader, model, logger=logger, compile=args.compile)
+        trainer = Trainer(
+            train_dataLoader,
+            test_dataLoader,
+            model,
+            logger=logger,
+            compile=args.compile,
+        )
         if args.hdf5 is not None:
             print("using hdf5")
 

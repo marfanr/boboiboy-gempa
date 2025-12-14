@@ -4,52 +4,8 @@ from .layers.SeparableConv import SeparableConvLayer
 from .layers.TemporalConv import TemporalConvLayer
 from .loader import ModelLoader
 from torch.functional import F
+from TCNSegmentation import EncoderBlock, DecoderBlock
 
-
-class EncoderBlock(nn.Module):
-    def __init__(self):
-        super().__init__()
-        layers = [
-            SeparableConvLayer(3, 8, kernel_size=9, padding=4),
-            nn.MaxPool1d(2),
-            SeparableConvLayer(8, 16, kernel_size=7, padding=3),
-            nn.MaxPool1d(2),
-            SeparableConvLayer(16, 32, kernel_size=5, padding=2),
-            nn.MaxPool1d(2),
-            SeparableConvLayer(32, 64, kernel_size=3, padding=1),
-            nn.MaxPool1d(2),
-        ]
-        self.seq = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.seq(x)
-
-
-class DecoderBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size=3):
-        super().__init__()
-        self.conv = nn.Sequential(
-            # 1. Perbesar ukuran sinyal (misal: dari 63 -> 126)
-            nn.Upsample(scale_factor=2, mode="linear", align_corners=False),
-            # 2. Olah fiturnya
-            nn.Conv1d(in_ch, out_ch, kernel_size, padding=kernel_size // 2),
-            nn.BatchNorm1d(out_ch),
-        )
-
-        layers = [nn.Upsample(scale_factor=2, mode="linear", align_corners=False)]
-
-        # Jika channel berubah, tambahkan 1x1 Conv untuk menyesuaikan channel
-        if in_ch != out_ch:
-            layers.append(nn.Conv1d(in_ch, out_ch, kernel_size=1, bias=False))
-            layers.append(nn.BatchNorm1d(out_ch))
-
-        self.shortcut = nn.Sequential(*layers)
-
-    def forward(self, x):
-        skip = x
-        x = self.conv(x)
-        skip = self.shortcut(skip)
-        return torch.relu(x + skip)
 
 
 @ModelLoader.register("TCNSegmentationTransformer")

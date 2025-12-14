@@ -4,63 +4,7 @@ from .layers.SeparableConv import SeparableConvLayer
 from .layers.TemporalConv import TemporalConvLayer, DMLDropout
 from .loader import ModelLoader
 from torch.functional import F
-
-
-class EncoderBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, ksize=3, pool=True):
-        super().__init__()
-        self.__class__.__name__ = "EncoderBlock"
-        layers = [
-            nn.Conv1d(in_ch, out_ch, ksize, padding=ksize // 2),
-            nn.BatchNorm1d(out_ch),
-            nn.ReLU(inplace=True),
-            DMLDropout(0.3),
-            nn.Conv1d(out_ch, out_ch, ksize, padding=ksize // 2),
-            nn.BatchNorm1d(out_ch),
-            nn.ReLU(inplace=True),
-            DMLDropout(0.3),
-        ]
-        self.conv = nn.Sequential(*layers)
-        self.pool = nn.MaxPool1d(2) if pool else nn.Identity()
-
-    def forward(self, x):
-        x = self.conv(x)
-        skip = x
-        x = self.pool(x)
-        return x
-
-
-class DecoderBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size=3):
-        super().__init__()
-        self.__class__.__name__ = "DecoderBlock"
-
-        # --- Main path ---
-        self.main = nn.Sequential(
-            # upsample (in_ch -> out_ch)
-            nn.ConvTranspose1d(in_ch, out_ch, kernel_size=4, stride=2, padding=1),
-            # conv (out_ch -> out_ch)
-            nn.Conv1d(
-                out_ch, out_ch, kernel_size, padding=kernel_size // 2, bias=False
-            ),
-            nn.BatchNorm1d(out_ch),
-        )
-
-        # --- Shortcut path ---
-        shortcut_layers = [
-            nn.ConvTranspose1d(in_ch, out_ch, kernel_size=4, stride=2, padding=1)
-        ]
-
-        # jika butuh penyesuaian channel (in_ch != out_ch)
-        if in_ch != out_ch:
-            shortcut_layers.append(nn.Conv1d(out_ch, out_ch, kernel_size=1, bias=False))
-            shortcut_layers.append(nn.BatchNorm1d(out_ch))
-
-        self.shortcut = nn.Sequential(*shortcut_layers)
-
-    def forward(self, x):
-        return torch.relu(self.main(x) + self.shortcut(x))
-
+from .TCNSegmentation import EncoderBlock, DecoderBlock
 
 @ModelLoader.register("TCNSegmentationPhasePicking")
 class Models(nn.Module):
@@ -89,8 +33,6 @@ class Models(nn.Module):
             DecoderBlock(32, 16, 5),
             DecoderBlock(16, 8, 7),
             DecoderBlock(8, 4, 5),
-            nn.Conv1d(4, 8, kernel_size=3, padding=1),
-            nn.GLU(dim=1),  # input 6 → output 3
             nn.Conv1d(4, 1, kernel_size=1),
         )
 
