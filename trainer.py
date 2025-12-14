@@ -98,8 +98,8 @@ class Trainer:
         self.logger = logger
 
         # Setup criterion
-        # self.criterion = nn.BCEWithLogitsLoss()
-        self.criterion = FocalDiceLoss()
+        self.criterion = nn.BCEWithLogitsLoss()
+        # self.criterion = FocalDiceLoss()
 
     def is_directml_device(self, device):
         """Cek apakah device adalah DirectML"""
