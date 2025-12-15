@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 import h5py
 import numpy as np
 import pandas as pd
+from torch_geometric.data import InMemoryDataset, Data
 
 """
 BROKEN
@@ -335,7 +336,7 @@ class NewHDF5WindowDataset(Dataset):
         count,
         stride=500,
         offset_pos=0,
-        x_margin=100,
+        x_margin=2000,
         normalize=False,
         noise_level=0.4,
         windows=None,
@@ -443,17 +444,7 @@ class NewHDF5WindowDataset(Dataset):
         return all_windows, all_labels
 
     def get_sample_weights(self, balancing_rules=None):
-        """
-        Menghitung sample weights untuk WeightedRandomSampler
 
-        Args:
-            balancing_rules: dict dengan key "min", "2nd_min", "middle", "max"
-                           berisi koefisien target relatif terhadap kelas terbesar
-                           Default: {"min": 0.8, "2nd_min": 0.8, "middle": 0.8, "max": 0.8}
-
-        Returns:
-            torch.Tensor: weights untuk setiap sample
-        """
         if balancing_rules is None:
             balancing_rules = {
                 "min": 0.8,
@@ -640,3 +631,65 @@ class NewHDF5FullDataset(Dataset):
         wave = torch.clamp(wave, min=-10, max=10)
 
         return wave
+
+
+class HDF5PhaseGraphDataset(InMemoryDataset):
+    def __init__(
+        self,
+        root,
+        df,
+        hdf5_path,
+        data_length=200,
+        stride=500,
+        x_margin=100,
+        transform=None,
+        pre_transform=None,
+    ):
+        self.df = df
+        self.hdf5_path = hdf5_path
+        self.data_length = data_length
+        self.stride = stride
+        self.x_margin = x_margin
+        super().__init__(root, transform, pre_transform)
+        self.data, self.slices = torch.load(self.processed_paths[0])
+
+    @property
+    def raw_file_names(self):
+        # tidak digunakan, karena kita load dari hdf5 langsung
+        return []
+
+    @property
+    def processed_file_names(self):
+        return ["data.pt"]
+
+    def download(self):
+        pass
+
+    def process(self):
+        data_list = []
+
+        with h5py.File(self.hdf5_path, "r", swmr=True, libver="latest") as h5:
+            for idx, row in self.df.iterrows():
+                # ambil waktu pick dan posisi stasiun
+                t_P = row.p_arrival_sample
+                t_S = row.s_arrival_sample
+                lat = row.receiver_latitude
+                lon = row.receiver_longitude
+
+                # buat fitur node: [t_P, t_S, lat, lon]
+                x = torch.tensor([[t_P, t_S, lat, lon]], dtype=torch.float)
+
+                # optional: edge_index, nanti bisa dibuat dinamis
+                edge_index = torch.empty((2, 0), dtype=torch.long)  # sementara kosong
+
+                # buat label sederhana, misal P/S presence
+                label = torch.tensor(
+                    [1 if not np.isnan(t_P) or not np.isnan(t_S) else 0],
+                    dtype=torch.float,
+                )
+
+                data = Data(x=x, edge_index=edge_index, y=label)
+                data_list.append(data)
+
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])

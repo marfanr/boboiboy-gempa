@@ -7,6 +7,7 @@ import pandas as pd
 from .loader.h5 import NewHDF5FullDataset, NewHDF5WindowDataset
 from sklearn.model_selection import train_test_split
 
+
 """
 BROKEN
 """
@@ -137,6 +138,19 @@ class DataLoader:
             self.df_train = df[df.source_id.isin(train_events)]
             self.df_test = df[df.source_id.isin(test_events)]
 
+            self.list_dataset = {
+                "gempa_window": NewHDF5WindowDataset,
+                "gempa_full": NewHDF5FullDataset,
+            }
+            self.dataset = args.dataset
+            if self.dataset is None:
+                self.dataset = "gempa_window"
+
+            if self.dataset not in self.list_dataset:
+                raise ValueError(f"dataset {self.dataset} not found")
+
+            self.ds = self.list_dataset[self.dataset]
+
             if len(df_noice) > 0:
                 # df_noice = df_noice.sample(
                 #     n=int(1 * len(self.df)),
@@ -221,7 +235,7 @@ class DataLoader:
             if count is None:
                 count = len(df_)
 
-            return NewHDF5WindowDataset(
+            return self.ds(
                 length=1000,
                 df=df_,
                 hdf5_path=self.hdf5,
