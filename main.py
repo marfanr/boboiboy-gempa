@@ -7,8 +7,31 @@ from torchinfo import summary
 from utility.Writer import TensorWriter
 from model.parser import ConfigParser
 from utility.splitter import DataSplitter
+import torch
+import numpy as np
 
-supported_mode = ["train", "test", "ls", "debug", "split", "info"]
+def collate_multi_station(batch):
+    X_list, y_list = zip(*batch)
+    x_wave, x_cords = zip(*X_list)
+    # print(x_wave[0].shape[0])
+
+    N_max = max(x.shape[0] for x in x_wave)
+    # print(N_max)
+    T, C = x_wave[0].shape[1:]
+    B = len(x_wave)
+    #
+    X_wave_pad = torch.zeros(len(x_wave), N_max, *x_wave[0].shape[1:])
+    X_cords_pad = torch.zeros(len(x_cords), N_max, *x_cords[0].shape[1:])
+    station_mask = torch.zeros(B, N_max, dtype=torch.bool)
+    #
+    for i, x in enumerate(x_wave):
+        n = x.shape[0]
+        X_wave_pad[i, :n] = torch.from_numpy(x)
+        station_mask[i, :n] = True
+    #
+    y = torch.from_numpy(np.stack(y_list, axis=0))
+    #
+    return X_wave_pad, X_cords_pad, station_mask, y
 
 
 def main():
@@ -53,6 +76,7 @@ def main():
     train_parser.add_argument("--compile", type=bool, default=False)
     train_parser.add_argument("--gpu_parallel", type=bool, default=False)
     train_parser.add_argument("--dataset", type=str)
+    train_parser.add_argument("--multistation", type=bool, default=True)
 
     debug_parser = subparser.add_parser("debug", help="debug model")
     debug_parser.add_argument("--cfg", type=str)
@@ -66,9 +90,6 @@ def main():
     # TODO: to be implemented
 
     args = parser.parse_args()
-
-    if args.mode not in supported_mode:
-        raise ValueError(f"Mode {args.mode} not supported")
 
     if args.mode == "ls":
         for i in ModelLoader.list_keys():
@@ -94,8 +115,6 @@ def main():
     if args.mode == "info":
         summary(
             model,
-            input_size=(128, 3, 1000),
-            col_names=["input_size", "output_size", "num_params"],
         )
         return
 
@@ -113,12 +132,13 @@ def main():
         6000, args.stride, args.test_count, args.test_pos, True
     )
 
-    sample_weights = train_ds.get_sample_weights()
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True,
-    )
+    # sample_weights = train_ds.get_sample_weights()
+    # print(sample_weights)
+    # sampler = WeightedRandomSampler(
+    #     weights=sample_weights,
+    #     num_samples=len(sample_weights),
+    #     replacement=True,
+    # )
 
     # train_ds.lab
 
@@ -144,12 +164,14 @@ def main():
             )
         else:
             train_dataLoader = DataLoader(
-                train_ds, batch_size=args.batch, sampler=sampler
+                train_ds, batch_size=args.batch,
+                collate_fn=collate_multi_station
             )
             test_dataLoader = DataLoader(
                 test_ds,
                 batch_size=args.batch,
                 shuffle=False,
+                collate_fn=collate_multi_station
             )
 
     else:
@@ -169,11 +191,11 @@ def main():
         )
 
     # Buat WeightedRandomSampler
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True,  # Dengan replacement untuk oversampling
-    )
+    # sampler = WeightedRandomSampler(
+    #     weights=sample_weights,
+    #     num_samples=len(sample_weights),
+    #     replacement=True,  # Dengan replacement untuk oversampling
+    # )
 
     if args.mode == "train":
         trainer = Trainer(

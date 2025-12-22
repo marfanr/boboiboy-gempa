@@ -4,28 +4,26 @@ import torch
 import h5py
 import numpy as np
 import pandas as pd
-from .loader.h5 import NewHDF5FullDataset, NewHDF5WindowDataset
+from .loader.h5 import NewHDF5FullDataset, NewHDF5WindowDataset, H5MultiStationWindowDataset
 from sklearn.model_selection import train_test_split
-
 
 """
 BROKEN
 """
 
-
 class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
     def __init__(
-        self,
-        length,
-        x,
-        y,
-        meta,
-        stride,
-        count,
-        offset_pos,
-        x_margin=400,
-        normalize=True,
-        noise_level=0.01,
+            self,
+            length,
+            x,
+            y,
+            meta,
+            stride,
+            count,
+            offset_pos,
+            x_margin=400,
+            normalize=True,
+            noise_level=0.01,
     ):
         self.data_length = length
         self.x = x
@@ -54,7 +52,7 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
             interval_len = end_interval - start_interval
             if interval_len >= self.data_length:
                 for w_start in range(
-                    start_interval, end_interval - self.data_length + 1, stride
+                        start_interval, end_interval - self.data_length + 1, stride
                 ):
                     self.windows.append((sample_idx, w_start))
 
@@ -86,8 +84,8 @@ class EarthQuakeWaveSlidingWindowNumpyEventOnlyDataset(Dataset):
         if self.noise_level > 0:
             if np.random.random() > 0.5:
                 noise = (
-                    torch.randn_like(x_window, device=x_window.device)
-                    * self.noise_level
+                        torch.randn_like(x_window, device=x_window.device)
+                        * self.noise_level
                 )
                 x_window += noise
 
@@ -141,6 +139,7 @@ class DataLoader:
             self.list_dataset = {
                 "gempa_window": NewHDF5WindowDataset,
                 "gempa_full": NewHDF5FullDataset,
+                "gempa_multi": H5MultiStationWindowDataset,
             }
             self.dataset = args.dataset
             if self.dataset is None:
@@ -239,10 +238,10 @@ class DataLoader:
                 length=1000,
                 df=df_,
                 hdf5_path=self.hdf5,
-                count=count,
                 stride=stride,
-                offset_pos=offset_pos,
             )
+                # count=count,
+                # offset_pos=offset_pos,
             # return EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(
             #     length=length,
             #     df=df_,

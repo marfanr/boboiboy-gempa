@@ -3,5 +3,6 @@ from .TCNSegmentationPhasePicking import Models
 from .layers.register import LAYER_REGISTRY
 from .TCNSegmentationNew import TCNSegmentation
 from .TCNSegmentationV2 import TCNSegmentationV2
+from .TCNMultiStation import TCNMultiStation
 from .TCNSegmentationPhasePicking import Models
 from .GraphNN import GraphNN

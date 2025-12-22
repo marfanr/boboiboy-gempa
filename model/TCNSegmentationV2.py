@@ -4,7 +4,6 @@ from torch.nn import functional as F
 from .layers.TemporalConv import TemporalConvLayer, DMLDropout
 from .loader import ModelLoader
 
-
 class EncoderBlock(nn.Module):
     def __init__(self, in_ch, out_ch, ksize=3, pool=True, dropout=0.2):
         super().__init__()

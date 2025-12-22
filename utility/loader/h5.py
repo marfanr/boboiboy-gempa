@@ -326,6 +326,8 @@ class EarthQuakeWaveSlidingWindowHDF5EventOnlyDataset(Dataset):
 New Dataset
 """
 
+from typing import Literal
+
 
 class NewHDF5WindowDataset(Dataset):
     def __init__(
@@ -336,10 +338,17 @@ class NewHDF5WindowDataset(Dataset):
         count,
         stride=500,
         offset_pos=0,
-        x_margin=2000,
+        x_margin=1000,
         normalize=False,
         noise_level=0.4,
         windows=None,
+        balance_strategy: Literal[
+            "undersample",
+            "oversample",
+            "weighted",
+        ] = "undersample",  # "undersample", "oversample", atau "weighted"
+        target_distribution=None,  # Dict untuk distribusi target, misal {"P_and_S": 0.25, "P_only": 0.25, ...}
+        output_type: Literal["gempa","phase_p"] = "gempa",
     ):
         self.data_length = length
         self.df = df
@@ -350,7 +359,19 @@ class NewHDF5WindowDataset(Dataset):
         self.x_margin = x_margin
         self.normalize = normalize
         self.noise_level = noise_level
+        self.balance_strategy = balance_strategy
         self.h5 = None
+
+        # Default target distribution: semua kelas sama banyak
+        if target_distribution is None:
+            self.target_distribution = {
+                "P_and_S": 0.2,
+                "P_only": 0.15,
+                "S_only": 0.6,
+                "no_P_no_S": 0.6,
+            }
+        else:
+            self.target_distribution = target_distribution
 
         if windows is None:
             self.windows, self.labels = self._build_windows()
@@ -368,137 +389,227 @@ class NewHDF5WindowDataset(Dataset):
         print(f"Building windows from {start} to {end} ...")
 
         with h5py.File(self.hdf5_path, "r", swmr=True, libver="latest") as h5:
-            L = h5["data/" + self.df.iloc[0].trace_name].shape[0]
+            P = self.df.p_arrival_sample.to_numpy()
+            S = self.df.s_arrival_sample.to_numpy()
 
-        P = self.df.p_arrival_sample.to_numpy()
-        S = self.df.s_arrival_sample.to_numpy()
+            P_left = np.maximum(0, P - self.x_margin)
+            P_right = np.minimum(6000, P + self.x_margin)
+            S_left = np.maximum(0, S - self.x_margin)
+            S_right = np.minimum(6000, S + self.x_margin)
 
-        P_left = np.maximum(0, P - self.x_margin)
-        P_right = np.minimum(6000, P + self.x_margin)
+            window_starts = np.arange(0, 6000 - self.data_length + 1, self.stride)
+            window_ends = window_starts + self.data_length
 
-        S_left = np.maximum(0, S - self.x_margin)
-        S_right = np.minimum(6000, S + self.x_margin)
+            # Window valid jika masuk margin P atau S
+            P_valid = (window_starts[None, :] < P_right[:, None]) & (
+                window_ends[None, :] > P_left[:, None]
+            )
+            S_valid = (window_starts[None, :] < S_right[:, None]) & (
+                window_ends[None, :] > S_left[:, None]
+            )
 
-        window_starts = np.arange(0, 6000 - self.data_length + 1, self.stride)
-        window_ends = window_starts + self.data_length
+            # Window yang benar-benar mengandung arrival
+            P_in = (P[:, None] >= window_starts[None, :]) & (
+                P[:, None] < window_ends[None, :]
+            )
+            S_in = (S[:, None] >= window_starts[None, :]) & (
+                S[:, None] < window_ends[None, :]
+            )
 
-        # Window valid jika masuk margin P atau S
-        P_valid = (window_starts[None, :] < P_right[:, None]) & (
-            window_ends[None, :] > P_left[:, None]
-        )
+            P_eff = P_valid & P_in
+            S_eff = S_valid & S_in
 
-        S_valid = (window_starts[None, :] < S_right[:, None]) & (
-            window_ends[None, :] > S_left[:, None]
-        )
+            # Ekstrak indices untuk setiap kategori
+            idx_p_and_s = np.where(P_eff & S_eff)
+            idx_p_only = np.where(P_eff & ~S_eff)
+            idx_s_only = np.where(~P_eff & S_eff)
+            idx_no_p_no_s = np.where((P_valid | S_valid) & ~P_eff & ~S_eff)
 
-        # Window yang benar-benar mengandung arrival
-        P_in = (P[:, None] >= window_starts[None, :]) & (
-            P[:, None] < window_ends[None, :]
-        )
-        S_in = (S[:, None] >= window_starts[None, :]) & (
-            S[:, None] < window_ends[None, :]
-        )
-
-        P_eff = P_valid & P_in
-        S_eff = S_valid & S_in
-
-        # Hitung kategori
-        category = {
-            "P_and_S": np.sum(P_eff & S_eff),
-            "P_only": np.sum(P_eff & ~S_eff),
-            "S_only": np.sum(~P_eff & S_eff),
-            "no_P_no_S": np.sum((P_valid | S_valid) & ~P_eff & ~S_eff),
-        }
-
-        print("Distribusi kelas:")
-        for k, v in category.items():
-            print(f"  {k}: {v}")
-
-        # Ekstrak indices
-        idx_p_and_s = np.where(P_eff & S_eff)
-        idx_p_only = np.where(P_eff & ~S_eff)
-        idx_s_only = np.where(~P_eff & S_eff)
-        idx_no_p_no_s = np.where((P_valid | S_valid) & ~P_eff & ~S_eff)
-
-        windows_p_and_s = list(zip(idx_p_and_s[0], idx_p_and_s[1]))
-        windows_p_only = list(zip(idx_p_only[0], idx_p_only[1]))
-        windows_s_only = list(zip(idx_s_only[0], idx_s_only[1]))
-        windows_no_p_no_s = list(zip(idx_no_p_no_s[0], idx_no_p_no_s[1]))
-
-        # Gabungkan semua windows
-        all_windows = (
-            windows_p_and_s + windows_p_only + windows_s_only + windows_no_p_no_s
-        )
-
-        # Buat label untuk setiap window
-        # 0: P_and_S, 1: P_only, 2: S_only, 3: no_P_no_S
-        all_labels = np.array(
-            [0] * len(windows_p_and_s)
-            + [1] * len(windows_p_only)
-            + [2] * len(windows_s_only)
-            + [3] * len(windows_no_p_no_s)
-        )
-
-        print(f"Total windows: {len(all_windows)}")
-
-        return all_windows, all_labels
-
-    def get_sample_weights(self, balancing_rules=None):
-
-        if balancing_rules is None:
-            balancing_rules = {
-                "min": 0.8,
-                "2nd_min": 0.8,
-                "middle": 0.8,
-                "max": 0.8,
+            # Konversi ke list of tuples
+            windows_dict = {
+                "P_and_S": list(zip(idx_p_and_s[0], idx_p_and_s[1])),
+                "P_only": list(zip(idx_p_only[0], idx_p_only[1])),
+                "S_only": list(zip(idx_s_only[0], idx_s_only[1])),
+                "no_P_no_S": list(zip(idx_no_p_no_s[0], idx_no_p_no_s[1])),
             }
 
-        # Hitung jumlah sample per kelas
+            # Print distribusi awal
+            print("\n=== Distribusi Awal ===")
+            for k, v in windows_dict.items():
+                print(f" {k}: {len(v)}")
+
+            # Balance windows
+            balanced_windows, balanced_labels = self._balance_windows(windows_dict)
+
+            print(f"\nTotal windows setelah balancing: {len(balanced_windows)}")
+            return balanced_windows, balanced_labels
+
+    def _balance_windows(self, windows_dict):
+        """Balance windows berdasarkan strategy yang dipilih"""
+
+        class_counts = {k: len(v) for k, v in windows_dict.items()}
+
+        if self.balance_strategy == "undersample":
+            return self._undersample(windows_dict, class_counts)
+        elif self.balance_strategy == "oversample":
+            return self._oversample(windows_dict, class_counts)
+        else:  # weighted - tidak perlu balance di sini
+            return self._no_balance(windows_dict)
+
+    def _undersample(self, windows_dict, class_counts):
+        """Undersample kelas mayoritas agar seimbang dengan target distribution"""
+
+        # Hitung target count berdasarkan kelas minoritas dan target distribution
+        min_count = min(class_counts.values())
+
+        # Hitung target count untuk setiap kelas
+        target_counts = {}
+        for class_name, ratio in self.target_distribution.items():
+            # Target dihitung relatif terhadap min_count
+            # Jika semua ratio sama (0.25), semua akan sama dengan min_count
+            target_counts[class_name] = int(
+                min_count / min(self.target_distribution.values()) * ratio
+            )
+
+        print("\n=== Undersampling ===")
+        balanced_windows = []
+        balanced_labels = []
+        label_map = {"P_and_S": 0, "P_only": 1, "S_only": 2, "no_P_no_S": 3}
+
+        for class_name, windows in windows_dict.items():
+            target = target_counts[class_name]
+            actual = len(windows)
+
+            if actual > target:
+                # Random sampling tanpa replacement
+                sampled_indices = np.random.choice(actual, target, replace=False)
+                sampled_windows = [windows[i] for i in sampled_indices]
+            else:
+                sampled_windows = windows
+
+            balanced_windows.extend(sampled_windows)
+            balanced_labels.extend([label_map[class_name]] * len(sampled_windows))
+
+            print(f" {class_name:15}: {actual:,} -> {len(sampled_windows):,}")
+
+        # Shuffle
+        indices = np.random.permutation(len(balanced_windows))
+        balanced_windows = [balanced_windows[i] for i in indices]
+        balanced_labels = np.array(balanced_labels)[indices]
+
+        return balanced_windows, balanced_labels
+
+    def _oversample(self, windows_dict, class_counts):
+        """Oversample kelas minoritas agar seimbang dengan target distribution"""
+
+        # Hitung target count berdasarkan kelas mayoritas dan target distribution
+        max_count = max(class_counts.values())
+
+        # Hitung target count untuk setiap kelas
+        target_counts = {}
+        for class_name, ratio in self.target_distribution.items():
+            target_counts[class_name] = int(
+                max_count / max(self.target_distribution.values()) * ratio
+            )
+
+        print("\n=== Oversampling ===")
+        balanced_windows = []
+        balanced_labels = []
+        label_map = {"P_and_S": 0, "P_only": 1, "S_only": 2, "no_P_no_S": 3}
+
+        for class_name, windows in windows_dict.items():
+            target = target_counts[class_name]
+            actual = len(windows)
+
+            if actual < target:
+                # Random sampling dengan replacement
+                sampled_indices = np.random.choice(actual, target, replace=True)
+                sampled_windows = [windows[i] for i in sampled_indices]
+            else:
+                sampled_windows = windows
+
+            balanced_windows.extend(sampled_windows)
+            balanced_labels.extend([label_map[class_name]] * len(sampled_windows))
+
+            print(f" {class_name:15}: {actual:,} -> {len(sampled_windows):,}")
+
+        # Shuffle
+        indices = np.random.permutation(len(balanced_windows))
+        balanced_windows = [balanced_windows[i] for i in indices]
+        balanced_labels = np.array(balanced_labels)[indices]
+
+        return balanced_windows, balanced_labels
+
+    def _no_balance(self, windows_dict):
+        """Tidak melakukan balancing, gunakan weighted sampling di DataLoader"""
+
+        print("\n=== Menggunakan Weighted Sampling (no resampling) ===")
+        all_windows = []
+        all_labels = []
+        label_map = {"P_and_S": 0, "P_only": 1, "S_only": 2, "no_P_no_S": 3}
+
+        for class_name, windows in windows_dict.items():
+            all_windows.extend(windows)
+            all_labels.extend([label_map[class_name]] * len(windows))
+            print(f" {class_name:15}: {len(windows):,}")
+
+        return all_windows, np.array(all_labels)
+
+    def get_sample_weights(self, method="inverse"):
+        """
+        Hitung sample weights untuk WeightedRandomSampler
+
+        method:
+        - "inverse": weight = 1 / count (kelas minoritas dapat weight lebih besar)
+        - "sqrt_inverse": weight = 1 / sqrt(count) (lebih soft)
+        - "effective": effective number of samples (paper Cui et al. 2019)
+        """
+
+        if self.labels is None:
+            raise ValueError(
+                "Labels tidak tersedia. Pastikan _build_windows sudah dipanggil."
+            )
+
         unique_labels, counts = np.unique(self.labels, return_counts=True)
         class_counts = dict(zip(unique_labels, counts))
 
-        # Urutkan berdasarkan jumlah
-        sorted_classes = sorted(class_counts.items(), key=lambda x: x[1])
+        print("\n=== Perhitungan Sample Weights ===")
+        print(f"Method: {method}")
 
-        # Tentukan target count untuk setiap kelas
-        max_count = sorted_classes[-1][1]
-        class_targets = {}
+        # Hitung weight untuk setiap kelas
+        class_weights = {}
 
-        print("\n=== Perhitungan Weight untuk Balancing ===")
-        for idx, (label, count) in enumerate(sorted_classes):
-            if idx == 0:
-                coef = balancing_rules["min"]
-                label_str = "min"
-            elif idx == 1:
-                coef = balancing_rules["2nd_min"]
-                label_str = "2nd_min"
-            elif idx == len(sorted_classes) - 1:
-                coef = balancing_rules["max"]
-                label_str = "max"
-            else:
-                coef = balancing_rules["middle"]
-                label_str = "middle"
+        if method == "inverse":
+            total_samples = len(self.labels)
+            for label, count in class_counts.items():
+                class_weights[label] = total_samples / (len(class_counts) * count)
 
-            target = max_count * coef
-            class_targets[label] = target
+        elif method == "sqrt_inverse":
+            total_samples = len(self.labels)
+            for label, count in class_counts.items():
+                class_weights[label] = np.sqrt(
+                    total_samples / (len(class_counts) * count)
+                )
 
-            class_name = ["P_and_S", "P_only", "S_only", "no_P_no_S"][label]
-            print(
-                f"Kelas {class_name:15} ({label_str:8}): {count:,} samples, target weight: {target/count:.4f}"
-            )
+        elif method == "effective":
+            # Effective Number of Samples: ENs = (1 - beta^n) / (1 - beta)
+            beta = 0.9999
+            for label, count in class_counts.items():
+                effective_num = (1.0 - beta**count) / (1.0 - beta)
+                class_weights[label] = 1.0 / effective_num
 
-        # Hitung weight untuk setiap sample
-        # Weight = target_count / actual_count
-        # Semakin kecil kelasnya, semakin besar weightnya
+        # Apply weights ke setiap sample
         sample_weights = np.zeros(len(self.labels))
         for label in unique_labels:
             mask = self.labels == label
-            weight = class_targets[label] / class_counts[label]
-            sample_weights[mask] = weight
+            sample_weights[mask] = class_weights[label]
 
-        print(
-            f"\nTotal effective samples setelah weighting: {sample_weights.sum():.0f}"
-        )
+            class_name = ["P_and_S", "P_only", "S_only", "no_P_no_S"][label]
+            print(
+                f"{class_name:15}: count={class_counts[label]:,}, weight={class_weights[label]:.4f}"
+            )
+
+        print(f"\nTotal effective samples: {sample_weights.sum():.0f}")
         print("=" * 50)
 
         return torch.DoubleTensor(sample_weights)
@@ -513,10 +624,9 @@ class NewHDF5WindowDataset(Dataset):
     def _get_single(self, idx):
         sample_idx, x_start = self.windows[idx]
         curr_df = self.df.iloc[sample_idx]
-
         data = self.h5["data/" + curr_df.trace_name]
-        x_end = x_start + self.data_length
 
+        x_end = x_start + self.data_length
         x_window = torch.from_numpy(data[x_start:x_end]).float().T
 
         if self.normalize:
@@ -526,7 +636,6 @@ class NewHDF5WindowDataset(Dataset):
             x_window = self._augmentation(x_window)
 
         label = torch.zeros(self.data_length, dtype=torch.float32)
-
         P_in_window = curr_df.p_arrival_sample - x_start
         S_in_window = curr_df.s_arrival_sample - x_start
 
@@ -693,3 +802,178 @@ class HDF5PhaseGraphDataset(InMemoryDataset):
 
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
+
+
+class H5MultiStationWindowDataset(Dataset):
+    def __init__(
+            self,
+            df: pd.DataFrame,
+            hdf5_path: str,
+            max_length: int = 6000,
+            stride: int = 500,
+            length: int = 1000,
+            x_margin: int = 100,
+            windows: np.ndarray | None = None,
+    ):
+        super().__init__()
+
+        self.hdf5_path = hdf5_path
+        self.max_length = max_length
+        self.stride = stride
+        self.window_size = length
+        self.x_margin = x_margin
+        self.h5 = None
+
+        # ============================
+        # Filter event (>=3 stasiun)
+        # ============================
+        counts = df["source_id"].value_counts()
+        self.df = df[df["source_id"].map(counts) > 2].copy()
+
+        self.Y_MEAN = [-112.80365782, 33.71483372]
+        self.Y_STD = [41.09888086, 11.07947129]
+
+        # ============================
+        # Map event
+        # ============================
+        source_ids = self.df["source_id"].unique()
+        event_map = {sid: i for i, sid in enumerate(source_ids)}
+        self.df["event_idx"] = self.df["source_id"].map(event_map)
+
+        # Group df per event (dipakai di __getitem__)
+        self.event_groups = {
+            eid: g for eid, g in self.df.groupby("event_idx")
+        }
+
+        # Build windows
+        self.windows = windows if windows is not None else self.build_window()
+
+    # ------------------------------------------------
+    def _lazy_init(self):
+        if self.h5 is None:
+            self.h5 = h5py.File(
+                self.hdf5_path, "r", swmr=True, libver="latest"
+            )
+
+    # ------------------------------------------------
+    def __len__(self):
+        return len(self.windows)
+
+    # ------------------------------------------------
+    def __getitem__(self, idx):
+        self._lazy_init()
+
+        event_idx, win_start = self.windows[idx]
+        win_end = win_start + self.window_size
+
+        event_df = self.event_groups[event_idx]
+
+        X_list = []
+        cords_list = []
+        y_list = []
+        target_coords_list = []
+        precursor_list = []
+
+
+        for row in event_df.itertuples(index=False):
+            trace = self.h5["/data/" + row.trace_name]
+            wave = trace[win_start:win_end]
+            wave = np.asarray(wave)
+
+            if wave.ndim == 1:
+                wave = wave[:, None]
+
+            # ----- label per stasiun -----
+            p = row.p_arrival_sample
+            s = row.s_arrival_sample
+            long = row.receiver_longitude
+            lat = row.receiver_latitude
+            elev = row.receiver_elevation_m
+
+            target_long = row.source_longitude
+            target_lat = row.source_latitude
+
+            p_left = max(0, p - self.x_margin)
+            p_right = min(self.max_length, p + self.x_margin)
+            s_left = max(0, s - self.x_margin)
+            s_right = min(self.max_length, s + self.x_margin)
+
+            p_valid = (win_start < p_right) and (win_end > p_left)
+            s_valid = (win_start < s_right) and (win_end > s_left)
+
+            p_in = (p >= win_start) and (p < win_end)
+            s_in = (s >= win_start) and (s < win_end)
+
+            # print(win_start, p_in, s_in)
+
+            # if s_valid and s_in:
+            #     print(s - win_start)
+            #
+            # if p_valid and s_valid and p_in and s_in:
+            #     label = 0  # P_and_S
+            # elif p_valid and p_in:
+            #     label = 1  # P_only
+            # elif s_valid and s_in:
+            #     label = 2  # S_only
+            # elif p_valid or s_valid:
+            #     label = 3  # no_P_no_S
+            # else:
+            #     continue  # stasiun ini tidak relevan
+
+            X_list.append(wave)
+            cords_list.append([long, lat, elev])
+            target_coords_list.append([target_long, target_lat])
+            # y_list.append(label)
+
+        X = np.stack(X_list, axis=0)  # (N_station, T, C)
+        target_long, target_lat = np.mean(target_coords_list, axis=0)
+        y = np.asarray([target_long, target_lat])
+        y = (y - self.Y_MEAN) / self.Y_STD
+
+        cords = np.asarray(cords_list, dtype=np.float32)
+
+        x_out = [X, cords]
+        return x_out, y
+
+    # ------------------------------------------------
+    def build_window(self):
+        df = self.df
+
+        P = df["p_arrival_sample"].to_numpy()
+        S = df["s_arrival_sample"].to_numpy()
+        event_idx = df["event_idx"].to_numpy()
+
+        window_start = np.arange(
+            0, self.max_length - self.window_size + 1, self.stride
+        )
+        window_end = window_start + self.window_size
+
+        P_left = np.maximum(0, P - self.x_margin)
+        P_right = np.minimum(self.max_length, P + self.x_margin)
+        S_left = np.maximum(0, S - self.x_margin)
+        S_right = np.minimum(self.max_length, S + self.x_margin)
+
+        valid_P = (window_start[None, :] < P_right[:, None]) & (
+                window_end[None, :] > P_left[:, None]
+        )
+        valid_S = (window_start[None, :] < S_right[:, None]) & (
+                window_end[None, :] > S_left[:, None]
+        )
+
+        # Window valid jika ADA minimal 1 stasiun aktif
+        valid_any = valid_P | valid_S
+
+        row_idx, win_idx = np.where(valid_any)
+
+        windows = np.stack(
+            [
+                event_idx[row_idx],
+                window_start[win_idx],
+            ],
+            axis=1,
+        )
+
+        # unique event-window
+        windows = np.unique(windows, axis=0)
+
+        return windows

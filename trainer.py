@@ -2,62 +2,72 @@ from ignite.handlers import ModelCheckpoint
 from torch.utils.data import DataLoader
 from torch import nn
 from ignite.engine import Engine
-import torch
-from ignite.engine import create_supervised_evaluator
-from ignite.metrics import Accuracy, Loss
 from ignite.engine import Events
 from ignite.handlers import EarlyStopping
 import time
-import torch
 from ignite.handlers import ModelCheckpoint
-from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.multiprocessing as mp
-import torch.distributed as dist
 from utility.Writer import TensorWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch
 from torch.functional import F
+from ignite.metrics import Loss, MeanSquaredError, MeanAbsoluteError, Accuracy
 
 
-class FocalDiceLoss(nn.Module):
-    """Combined Focal + Dice Loss untuk boundary detection yang lebih baik"""
-
-    def __init__(self, alpha=0.25, gamma=2.0, smooth=1.0):
+class DMLL2Loss(nn.Module):
+    def __init__(self, reduction="mean"):
         super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.smooth = smooth
-
-    def focal_loss(self, pred, target):
-        bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
-        pt = torch.exp(-bce)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * bce
-        return focal_loss.mean()
-
-    def dice_loss(self, pred, target):
-        pred = torch.sigmoid(pred)
-        intersection = (pred * target).sum()
-        union = pred.sum() + target.sum()
-        dice = (2.0 * intersection + self.smooth) / (union + self.smooth)
-        return 1.0 - dice
+        self.reduction = reduction
 
     def forward(self, pred, target):
-        focal = self.focal_loss(pred, target)
-        dice = self.dice_loss(pred, target)
-        return focal + dice
+        diff = pred - target
+        loss = diff * diff  # TIDAK ada sqrt
+
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        return loss
+
+class DMLHaverSineLoss(nn.Module):
+    def __init__(self, radius=6371, eps=1e-7):
+        super().__init__()
+        self.R = radius
+        self.eps = eps
+
+    def forward(self, pred, target):
+        pred = torch.deg2rad(pred.float())
+        target = torch.deg2rad(target.float())
+
+        lat1, lon1 = pred[:, 0], pred[:, 1]
+        lat2, lon2 = target[:, 0], target[:, 1]
+
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+
+        a = (
+                torch.sin(dlat / 2) ** 2
+                + torch.cos(lat1) * torch.cos(lat2)
+                * torch.sin(dlon / 2) ** 2
+        )
+
+        a = torch.clamp(a, self.eps, 1.0 - self.eps)
+
+        c = 2 * torch.arcsin(torch.sqrt(a))
+        d = self.R * c
+        return d.mean()
 
 
 class Trainer:
     def __init__(
-        self,
-        train: DataLoader,
-        test: DataLoader,
-        model: nn.Module,
-        logger: TensorWriter = None,
-        optimizer=None,
-        criterion=None,
-        device=None,  # ← Tambahkan parameter device
-        compile: bool = False,
+            self,
+            train: DataLoader,
+            test: DataLoader,
+            model: nn.Module,
+            logger: TensorWriter = None,
+            optimizer=None,
+            criterion=None,
+            device=None,  # ← Tambahkan parameter device
+            compile: bool = False,
     ):
         print(f"iterasi_per_epoch {len(train)} , {len(test)}")
         self.train_dl = train
@@ -98,7 +108,7 @@ class Trainer:
         self.logger = logger
 
         # Setup criterion
-        self.criterion = nn.BCEWithLogitsLoss()
+        self.criterion = DMLHaverSineLoss()
         # self.criterion = FocalDiceLoss()
 
     def is_directml_device(self, device):
@@ -145,15 +155,16 @@ class Trainer:
     def train_step(self, engine, batch):
         with torch.autocast(device_type="cpu", dtype=torch.float16):
             self.model.train()
-            inputs, targets = batch
-
+            # inputs, targets = batch
+            wave, cords, mask, out = batch
             self.optimizer.zero_grad(set_to_none=True)
 
             # Gunakan self.device
-            outputs = self.model(inputs.to(self.device))
-            loss = self.criterion(outputs, targets.to(self.device))
-            if torch.isnan(loss) or torch.isinf(loss):
-                print(f"Batch loss invalid")
+            outputs = self.model(wave.to(self.device), cords.to(self.device), mask.to(self.device))
+            # print(f"output shape : {outputs.shape} out shape : {out.shape}")
+            loss = self.criterion(outputs, out.to(self.device))
+            # if torch.isnan(loss) or torch.isinf(loss):
+            #     print(f"Batch loss invalid")
             loss.backward()
             self.optimizer.step()
             return loss.item()
@@ -200,16 +211,24 @@ class Trainer:
             },
         )
         print(
-            f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}, Val Acc: {metrics['accuracy']:.4f}"
+            f"Epoch {engine.state.epoch} - Val Loss: {metrics['loss']:.4f}"
         )
         print(f"scheduler state: {self.scheduler.state_dict()}")
         if self.logger is not None:
             self.logger.write_scalar("val", "loss", metrics["loss"], epoch)
             self.logger.write_scalar("val", "accuracy", metrics["accuracy"], epoch)
 
-    def _prepare_batch(self, batch, device):
-        x, y = batch
-        return x.to(device), y.to(device)
+    def eval_step(self, engine, batch):
+        self.model.eval()
+        with torch.no_grad():
+            X_wave, X_cords, station_mask, y = batch
+            X_wave = X_wave.to(self.device)
+            X_cords = X_cords.to(self.device)
+            station_mask = station_mask.to(self.device)
+            y = y.to(self.device)
+
+            y_pred = self.model(X_wave, X_cords, station_mask)
+            return y_pred, y
 
     def _per_iterate_log(self, engine):
         if self.logger is not None:
@@ -219,14 +238,12 @@ class Trainer:
 
     def train(self, max_epoch, weight, output, distributed=False):
         self.trainer = Engine(self.train_step)
-        self.evaluator = create_supervised_evaluator(
-            self.model,
-            metrics={
-                "accuracy": Accuracy(output_transform=self.threshold_output),
-                "loss": Loss(self.criterion),
-            },
-            device=self.device,  # ← Gunakan self.device
-        )
+        self.evaluator = Engine(self.eval_step)
+
+        Loss(self.criterion).attach(self.evaluator, "loss")
+        # Accuracy(self.criterion).attach(self.evaluator, "accuracy")
+
+
         self.output = output
         if self.output is None:
             self.output = "checkpoints"
